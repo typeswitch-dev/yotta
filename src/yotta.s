@@ -33,11 +33,13 @@ struc USER
 .HERE resq 1 ; pointer into DATA region
 .PROG resq 1 ; base of program memory
 .KERS resq 1 ; kernel source
-.KERW resq 1 ; kernel word list
-.FORW resq 1 ; forth word list
 .EVAL resq 1 ; literal evaluator, i.e. code to fall back on if FIND failed
-.DICT resq 1 ; dictionary for new definitions
 .NAME resq NAME_SIZE/8 ; holds last name
+.KERW resq 1 ; kernel word list
+.MINW resq 1 ; minimal word list
+.ASMW resq 1 ; assembler word list
+.FORW resq 1 ; forth word list
+.DICT resq 1 ; dictionary for new definitions
 .FIND resq FIND_SIZE/8 ; search order
 endstruc
 
@@ -59,6 +61,12 @@ _main:  ; align stack
         mov [rcx], rdi
         mov [rbp + USER.DICT], rcx
         mov [rbp + USER.FIND], rcx
+        lea rcx, [rbp + USER.FORW]
+        mov [rbp + USER.FIND + 8], rcx
+        lea rcx, [rbp + USER.ASMW]
+        mov [rbp + USER.FIND + 16], rcx
+        lea rcx, [rbp + USER.MINW]
+        mov [rbp + USER.FIND + 24], rcx
 
         xor eax, eax
         stosq ; LINK
@@ -146,7 +154,7 @@ _WORD:  push rax
         jb .store
         cmp al, 'z'
         ja .store
-        ; sub al, 32      ; convert to uppercase
+        sub al, 32       ; convert to uppercase
 .store  stosb
         inc cl
         cmp cl, NAME_SIZE-1
