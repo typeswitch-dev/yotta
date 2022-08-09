@@ -39,6 +39,7 @@ struc USER
 .MINW resq 1 ; minimal word list
 .ASMW resq 1 ; assembler word list
 .FORW resq 1 ; forth word list
+.MIRW resq 1 ; mirth word list
 .DICT resq 1 ; dictionary for new definitions
 .FIND resq FIND_SIZE/8 ; search order
 endstruc
@@ -61,12 +62,14 @@ _main:  ; align stack
         mov [rcx], rdi
         mov [rbp + USER.DICT], rcx
         mov [rbp + USER.FIND], rcx
-        lea rcx, [rbp + USER.FORW]
+        lea rcx, [rbp + USER.MIRW]
         mov [rbp + USER.FIND + 8], rcx
-        lea rcx, [rbp + USER.ASMW]
+        lea rcx, [rbp + USER.FORW]
         mov [rbp + USER.FIND + 16], rcx
-        lea rcx, [rbp + USER.MINW]
+        lea rcx, [rbp + USER.ASMW]
         mov [rbp + USER.FIND + 24], rcx
+        lea rcx, [rbp + USER.MINW]
+        mov [rbp + USER.FIND + 32], rcx
 
         xor eax, eax
         stosq ; LINK
@@ -154,7 +157,7 @@ _WORD:  push rax
         jb .store
         cmp al, 'z'
         ja .store
-        sub al, 32       ; convert to uppercase
+;        sub al, 32       ; convert to uppercase
 .store  stosb
         inc cl
         cmp cl, NAME_SIZE-1

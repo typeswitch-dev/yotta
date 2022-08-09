@@ -42,17 +42,18 @@
 \ These are memory offsets from RBP, for various fields that the engine
 \ manages. RBP points to the "user area" and also to a big chunk of R/W
 \ memory initially.
-: $USER.HERE    ^00 ; \ HERE pointer.
-: $USER.PROG    ^08 ; \ PROG pointer -- pointer into base of program memory.
-: $USER.KERS    ^10 ; \ Kernel source pointer.
-: $USER.EVAL    ^18 ; \ Literal evaluator pointer.
-: $USER.NAME    ^20 ; \ Name buffer.
-: $USER.KERW    ^40 ; \ Kernel wordlist.
-: $USER.MINW    ^48 ; \ Minimal wordlist. (What you get when you use ONLY.)
-: $USER.ASMW    ^50 ; \ Assembler wordlist.
-: $USER.FORW    ^58 ; \ Forth wordlist.
-: $USER.DICT    ^60 ; \ Dictionary pointer.
-: $USER.FIND    ^68 ;
+: $USER.HERE ^00000000 ; \ HERE pointer.
+: $USER.PROG ^00000008 ; \ PROG pointer -- pointer into base of program memory.
+: $USER.KERS ^00000010 ; \ Kernel source pointer.
+: $USER.EVAL ^00000018 ; \ Literal evaluator pointer.
+: $USER.NAME ^00000020 ; \ Name buffer.
+: $USER.KERW ^00000040 ; \ Kernel wordlist.
+: $USER.MINW ^00000048 ; \ Minimal wordlist. (What you get when you use ONLY.)
+: $USER.ASMW ^00000050 ; \ Assembler wordlist.
+: $USER.FORW ^00000058 ; \ Forth wordlist.
+: $USER.MIRW ^00000060 ; \ Mirth wordlist.
+: $USER.DICT ^00000068 ; \ Dictionary pointer.
+: $USER.FIND ^00000070 ;
 
 \ Dict field offsets. Keep in sync with "struc DICT" in the ASM source.
 \ The dictionary is a linked list of definitions.
@@ -63,26 +64,32 @@
 
 : [KERNEL-DEFINITIONS]
     \ Change current dictionary to KERNEL.
-    $48 $8D $45 $USER.KERW \ LEA RAX, [RBP+USER.KERW]
-    $48 $89 $45 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    $48 $8D $85 $USER.KERW \ LEA RAX, [RBP+USER.KERW]
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    ;
+
+: [MIRTH-DEFINITIONS]
+    \ Change current dictionary to MIRTH.
+    $48 $8D $85 $USER.MIRW \ LEA RAX, [RBP+USER.MIRW]
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
     ;
 
 : [FORTH-DEFINITIONS]
     \ Change current dictionary to FORTH.
-    $48 $8D $45 $USER.FORW \ LEA RAX, [RBP+USER.FORW]
-    $48 $89 $45 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    $48 $8D $85 $USER.FORW \ LEA RAX, [RBP+USER.FORW]
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
     ;
 
 : [ASSEMBLER-DEFINITIONS]
     \ Change current dictionary to ASSEMBLER.
-    $48 $8D $45 $USER.ASMW \ LEA RAX, [RBP+USER.ASMW]
-    $48 $89 $45 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    $48 $8D $85 $USER.ASMW \ LEA RAX, [RBP+USER.ASMW]
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
     ;
 
 : [MINIMAL-DEFINITIONS]
     \ Change current dictionary to ASSEMBLER.
-    $48 $8D $45 $USER.MINW \ LEA RAX, [RBP+USER.MINW]
-    $48 $89 $45 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    $48 $8D $85 $USER.MINW \ LEA RAX, [RBP+USER.MINW]
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
     ;
 
 : PREPARE-REX
@@ -259,6 +266,14 @@
 : DIVL_ OPL ^F7 /6 ; : IDIVL_ OPL ^F7 /7 ;
 : DIVQ_ OPQ ^F7 /6 ; : IDIVQ_ OPQ ^F7 /7 ;
 
+: INCB_ OPB ^FE /0 ; : DECB_ OPB ^FE /1 ;
+: INCW_ OPW ^FF /0 ; : DECW_ OPW ^FF /1 ;
+: INCL_ OPL ^FF /0 ; : DECL_ OPL ^FF /1 ;
+: INCQ_ OPQ ^FF /0 ; : DECQ_ OPQ ^FF /1 ;
+
+: CALLQ_ OPL ^FF /2 ; \ forced to 64 bits
+: JUMPQ_ OPL ^FF /4 ; \ forced to 64 bits
+
 \ Ops that expect a modrm argument and an immediate.
 : MOVB_.  OPB ^C6 /0 ;
 : MOVW_.. OPW ^C7 /0 ;
@@ -392,10 +407,10 @@
     \ definition, to turn the whole definition into a word that
     \ simply compiles a call to itself. For example,
     \
-    \   : SQUARE CALL> dup * ;
+    \   : SQUARE CALL> DUP * ;
     \
     \ will make it so that when SQUARE is interpreted, it will
-    \ compile a call into its body (the dup * part). Thus CALL>
+    \ compile a call into its body (the DUP * part). Thus CALL>
     \ is like the default compilation action of most forths.
 
     ^E8
@@ -413,7 +428,7 @@
 : ;
     \ Store the end address of the word in
     \ its dictionary entry, and emit RET.
-    MOVQ< RAX, [RBP]. $USER.DICT
+    MOVQ< RAX, [RBP]: $USER.DICT
     MOVQ< RAX, [RAX]
     MOVQ> RDI, [RAX]. $DICT.DATA
     ^C3 \ RET
@@ -452,17 +467,17 @@
 [FORTH-DEFINITIONS]
 
 \ Basic stack words. These preserve non-stack registers (RBX, R15).
-: dup ( a -- a a ) INLINE/CALL>
+: DUP ( a -- a a ) INLINE/CALL>
     LEAQ< R15, [R15]. $F8
     MOVQ> RBX, [R15] ;
-: nip ( a b -- b ) INLINE/CALL>
+: NIP ( a b -- b ) INLINE/CALL>
     LEAQ< R15, [R15]. $08 ;
-: drop ( a -- ) INLINE/CALL>
+: DROP ( a -- ) INLINE/CALL>
     MOVQ< RBX, [R15]
     LEAQ< R15, [R15]. $08 ;
 
 \ Deeper stack words. These can trash RAX and RDX.
-: swap ( a b -- b a ) INLINE/CALL>
+: SWAP ( a b -- b a ) INLINE/CALL>
     MOVQ< RAX, [R15]
     MOVQ> RBX, [R15]
     MOVQ< RBX, RAX ;
@@ -479,7 +494,7 @@
     MOVQ> RDX, [R15]
     MOVQ< RBX, RAX ;
 
-: rdrop ( R: x -- ) INLINE>
+: RDROP ( R: x -- ) INLINE>
     \ Drop top of return stack.
     LEAQ< RSP, [0+ RSP]. $08 ;
 
@@ -487,24 +502,24 @@
     XORL< RBX, RBX ;
 : 0 ( -- 0 ) INLINE/CALL>
     \ Push zero on data stack.
-    dup 0* ;
+    DUP 0* ;
 
 [ASSEMBLER-DEFINITIONS]
 
 : U. ( -- u ) INLINE>
     \ Push zero-extended byte literal on data stack.
-    dup
+    DUP
     XORL< RBX, RBX
     MOVB#. RBX ;
 : U: ( -- u ) INLINE>
     \ Push zero-extended 32-bit literal on data stack.
-    dup MOVL#: RBX ;
+    DUP MOVL#: RBX ;
 : I: ( -- n ) INLINE>
     \ Push sign-extended 32-bit literal on data stack.
-    dup MOVQ_: RBX ;
+    DUP MOVQ_: RBX ;
 : X:: ( -- x ) INLINE>
     \ Push 64-bit literal on data stack.
-    dup MOVQ#:: RBX ;
+    DUP MOVQ#:: RBX ;
 
 [KERNEL-DEFINITIONS]
 
@@ -519,13 +534,13 @@
 
 [FORTH-DEFINITIONS]
 
-: bye ( -- ) CALL>
+: BYE ( -- ) CALL>
     \ End the program.
     MOVL#: RAX $SYS_EXIT
     XORL< RDI, RDI
     SYSCALL ;
 
-: emit ( c -- ) CALL>
+: EMIT ( c -- ) CALL>
     \ Emit byte to stdout.
     PUSHQ# RDI
     PUSHQ# RSI
@@ -535,10 +550,10 @@
     MOVL#: RDX $00000001 \ length
     MOVQ< RSI, RSP \ source
     SYSCALL
-    rdrop
+    RDROP
     POPQ# RSI
     POPQ# RDI
-    drop ;
+    DROP ;
 
 : 'NUL' INLINE/CALL>     0  ; : 'BL'  INLINE/CALL> U. $20 ;
 : 'SOH' INLINE/CALL> U. $01 ; : '!'   INLINE/CALL> U. $21 ;
@@ -606,19 +621,19 @@
 : '^'   INLINE/CALL> U. $5E ; : '~'   INLINE/CALL> U. $7E ;
 : '_'   INLINE/CALL> U. $5F ; : 'DEL' INLINE/CALL> U. $7F ;
 
-: cr ( -- ) CALL>
+: CR ( -- ) CALL>
     \ Emit a newline to stdout.
-    'LF' emit ;
-: space ( -- ) CALL>
+    'LF' EMIT ;
+: SPACE ( -- ) CALL>
     \ Emit a single space character to stdout.
-    'BL' emit ;
+    'BL' EMIT ;
 
 [KERNEL-DEFINITIONS]
 
 : $TEMPOFFSET ^0FFFC000 ;
 : RDI:TEMP ( -- RDI=TEMP ) CALL>
     \ Load temporary program memory address into RDI.
-    MOVQ< RDI, [RBP]. $USER.PROG
+    MOVQ< RDI, [RBP]: $USER.PROG
     LEAQ< RDI, [RDI]: $TEMPOFFSET ;
 
 [FORTH-DEFINITIONS]
@@ -634,7 +649,7 @@
 
     \ Running this while you are already compiling a temporary
     \ program will result in very strange behavior. Don't do it!
-    dup
+    DUP
     MOVQ< RBX, RDI
     RDI:TEMP ;
 
@@ -645,7 +660,7 @@
     RDI:TEMP
     PUSHQ# RDI
     MOVQ<  RDI, RBX
-    drop
+    DROP
     ;
 
 [KERNEL-DEFINITIONS]
@@ -665,163 +680,104 @@
 
 [ASSEMBLER-DEFINITIONS]
 
-: branch> ( -- orig ) CALL>
+: MKBRANCH> ( -- orig ) CALL>
     \ Create blank offset for forward branch.
     \ Must be resolved by >TARGET.
-    dup
+    DUP
     MOVQ< RBX, RDI
     XORQ< RAX, RAX
     STOSL ;
-: >target ( orig -- ) CALL>
+: >MKTARGET ( orig -- ) CALL>
     \ Resolve forward branch.
     LEAQ< RAX, [RDI]. $FC
     SUBQ< RAX, RBX
     VERIFY-BRANCH-OFFSET
     MOVL> RAX, [RBX] \ 32 bit move
-    drop ;
+    DROP ;
 
-: target< ( -- dest ) CALL>
+: MKTARGET< ( -- dest ) CALL>
     \ Push current location as backward branch target.
     \ May be used by <BRANCH any number of times.
-    dup
+    DUP
     MOVQ< RBX, RDI ;
-: <branch ( dest -- ) CALL>
+: <MKBRANCH ( dest -- ) CALL>
     \ Push offset to backward branch target.
     SUBQ< RBX, RDI
     LEAQ< RAX, [RBX]. $FC
     VERIFY-BRANCH-OFFSET
     STOSL
-    drop ;
+    DROP ;
+
+: BRANCH> MKBRANCH> ;
+: >TARGET >MKTARGET ;
+: <BRANCH <MKBRANCH ;
+: TARGET< MKTARGET< ;
 
 [FORTH-DEFINITIONS]
 
 : ahead ( CT: -- orig ) ( RT: *a -- *a / *b )
     \ Always branches forward.
-    ^E9 branch> ;
-: ?if ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
+    ^E9 MKBRANCH> ;
+: ?IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
     \ if top of stack is nonzero, otherwise takes
-    \ the second branch. Leaves scrutinee on stack.
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 branch> ; \ JZ branch
-: ?if0 ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
-    \ Opposite of ?IF -- takes the first branch
-    \ if top of stack is zero, otherwise takes
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^85 branch> ; \ JNZ branch
-: ?if<0 ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
-    \ Branch on sign. Takes the first branch if
-    \ the sign is negative, otherwise takes the
-    \ second branch.
+    ^0F ^84 MKBRANCH> ; \ JZ branch
+: <IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
+    \ Non-destructive IF. Takes the first branch
+    \ if top of stack is negative, otherwise takes
+    \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^89 branch> ; \ JNS branch
-: ?if>0 ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
-    \ Takes the first branch if the top of stack is
-    \ positive, i.e. greater than zero. Otherwise
-    \ takes the second branch.
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^8E branch> ; \ JLE branch
-: then ( CT: orig -- ) ( RT: *a / *a -- *a )
+    ^0F ^89 MKBRANCH> ; \ JNS branch
+: THEN ( CT: orig -- ) ( RT: *a / *a -- *a )
     \ Resolve a forward branch.
-    >target ;
-: else ( CT: orig1 -- orig2 ) ( RT: *a / *b -- *b / *a )
+    >MKTARGET ;
+: ELSE ( CT: orig1 -- orig2 ) ( RT: *a / *b -- *b / *a )
     \ Swap between branches.
-    ^E9 branch> swap >target ;
+    ^E9 MKBRANCH> SWAP >MKTARGET ;
 
-: begin ( CT: -- dest ) ( RT: *a -- ~*a / *a )
+: BEGIN ( CT: -- dest ) ( RT: *a -- ~*a / *a )
     \ Begin a loop.
-    target< ;
-: again ( CT: dest -- ) ( RT: *~a / *a -- *b )
+    MKTARGET< ;
+: AGAIN ( CT: dest -- ) ( RT: *~a / *a -- *b )
     \ Loop forever.
     \ Used at end of loop, e.g. BEGIN ... AGAIN
-    ^E9 <branch ;
-: ?until ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
+    ^E9 <MKBRANCH ;
+: ?UNTIL ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
     \ Keep going until nonzero. Nondestructive.
     \ Used at end of loop, e.g. BEGIN ... ?UNTIL
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 <branch ; \ JZ branch
-: ?until0 ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
-    \ Keep going until zero. Nondestructive.
-    \ Used at end of loop, e.g. BEGIN ... ?UNTIL0
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^85 <branch ; \ JZ branch
-: ?until<0 ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
-    \ Keep going until negative. Nondestructive.
-    \ Used at end of loop, e.g. BEGIN ... ?UNTIL<0
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^89 <branch ; \ JNS branch
-: ?until>0 ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
-    \ Keep going until positive. Nondestructive.
-    \ Used at end of loop, e.g. BEGIN ... ?UNTIL>0
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^8E <branch ; \ JLE branch
+    ^0F ^84 <MKBRANCH ; \ JZ branch
 
-\ The WHILE* have stack effects:
-\   ( CT: dest -- orig dest ) ( RT: ~*a / *b -- *b / ~*a / *b )
-: WHILENO ^0F ^80 branch> swap ;
-: WHILEO  ^0F ^81 branch> swap ;
-: WHILEAE ^0F ^82 branch> swap ;
-: WHILEB  ^0F ^83 branch> swap ;
-: WHILENZ ^0F ^84 branch> swap ;
-: WHILEZ  ^0F ^85 branch> swap ;
-: WHILEA  ^0F ^86 branch> swap ;
-: WHILEBE ^0F ^87 branch> swap ;
-: WHILENS ^0F ^88 branch> swap ;
-: WHILES  ^0F ^89 branch> swap ;
-: WHILEPO ^0F ^8A branch> swap ;
-: WHILEPE ^0F ^8B branch> swap ;
-: WHILEGE ^0F ^8C branch> swap ;
-: WHILEL  ^0F ^8D branch> swap ;
-: WHILEG  ^0F ^8E branch> swap ;
-: WHILELE ^0F ^8F branch> swap ;
-
-: ?while ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
+: ?WHILE ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
     \ Keep going while value is nonzero. Nondestructive.
     \ Typical usage: begin ... ?while ... repeat
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 branch> ; \ JNZ branch
-    swap ;
-: ?while0 ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
-    \ Keep going while value is zero. Nondestructive.
-    \ Typical usage: begin ... ?while0 ... repeat
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^85 branch> ; \ JZ branch
-    swap ;
-: ?while<0 ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
-    \ Keep going while value is less than zero. Nondestructive.
-    \ Typical usage: begin ... ?while<0 ... repeat
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^89 branch> ; \ JNS branch
-    swap ;
-: ?while>0 ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
-    \ Keep going while value is greater than zero. Nondestructive.
-    \ Typical usage: begin ... ?while>0 ... repeat
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^8E branch> ; \ JLE branch
-    swap ;
+    ^0F ^84 MKBRANCH> ; \ JNZ branch
+    SWAP ;
 
-: repeat ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
+: REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
     \ End a "begin ... while ..." loop.
     \ This is equivalent to "again then".
-    ^E9 <branch >target ;
+    ^E9 <MKBRANCH >MKTARGET ;
 
 [FORTH-DEFINITIONS]
 
 : + ( n1 n2 -- n3 ) INLINE/CALL>
     \ Addition.
     ADDQ< RBX, [R15]
-    nip ;
+    NIP ;
 : - ( n1 n2 -- n3 ) INLINE/CALL>
     \ Subtraction.
     MOVQ< RAX, [R15]
-    nip
+    NIP
     SUBQ< RAX, RBX
     MOVQ< RBX, RAX ;
 : * ( n1 n2 -- n3 ) INLINE/CALL>
     \ Multiplication.
     IMULQ< RBX, [R15]
-    nip ;
+    NIP ;
 
 : /MOD ( i1 +i2 -- i3 i4 ) INLINE/CALL>
     \ Signed integer division.
@@ -842,20 +798,36 @@
 : NEGATE ( i1 -- i2 ) INLINE/CALL>
     NEGQ_ RBX ;
 
-: .digits ( u -- ) CALL>
+: .DIGITS ( u -- ) CALL>
     \ Print decimal digits of unsigned number.
-    U. $0A U/MOD swap
-    ?IF .digits ELSE drop THEN
-    '0' + emit ;
+    U. $0A U/MOD SWAP
+    ?IF .DIGITS ELSE DROP THEN
+    '0' + EMIT ;
 
 : . ( i -- ) CALL>
     \ Print decimal number, followed by space.
-    ?IF<0
-        '-' emit
+    <IF
+        '-' EMIT
         NEGATE
     THEN
-    .digits
-    space ;
+    .DIGITS
+    SPACE ;
+
+: PARSE-NAME ( "<spaces>name" -- c-addr u ) CALL>
+    \ Parse a name from source stream.
+    \ TODO Proper bounds checking.
+    LODSB
+    CMP-AL. $20
+    JBE. $FB
+    LEAQ< R15, [R15]. $F0
+    MOVQ> RBX, [R15]. $08
+    LEAQ< RBX, [RSI]. $FF
+    MOVQ> RBX, [R15]
+    XORL< RBX, RBX
+    INCQ_ RBX
+    LODSB
+    CMP-AL. $20
+    JA. $F8 ;
 
 :  I8_MAX INLINE/CALL> U.  $7F ;
 :  I8_MIN INLINE/CALL> I:  $FFFFFF80 ;
@@ -874,18 +846,18 @@
 : U64_MAX INLINE/CALL> I:  $FFFFFFFF ;
 : U64_MIN INLINE/CALL> 0 ;
 
-: main CALL>
-    'H' emit 'e' emit 'l' emit 'l' emit 'o' emit '!' emit cr
-    U. $0A . cr
-    I8_MAX . cr
-    I8_MIN . cr
-    I16_MAX . cr
-    I16_MIN . cr
-    I32_MAX . cr
-    I32_MIN . cr
-    I64_MAX . cr
-    I64_MIN . cr
+: MAIN CALL>
+    'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
+    U. $0A . CR
+    I8_MAX . CR
+    I8_MIN . CR
+    I16_MAX . CR
+    I16_MIN . CR
+    I32_MAX . CR
+    I32_MIN . CR
+    I64_MAX . CR
+    I64_MIN . CR
     ;
 
-[ main bye ]
+[ MAIN BYE ]
 
