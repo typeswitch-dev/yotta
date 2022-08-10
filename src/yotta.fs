@@ -726,28 +726,6 @@
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^0F ^89 BRANCH> ; \ JNS branch
 
-[ASSEMBLER-DEFINITIONS]
-
-\ Like ?IF but use CPU flags instead of testing stack top.
-: IFNO ^0F ^80 BRANCH> ; \ if no overflow      (OF=0)
-: IFO  ^0F ^81 BRANCH> ; \ if overflow         (OF=1)
-: IFAE ^0F ^82 BRANCH> ; \ if above or equal   (CF=0)
-: IFB  ^0F ^83 BRANCH> ; \ if below            (CF=1)
-: IFNZ ^0F ^84 BRANCH> ; \ if non-equal        (ZF=1)
-: IFZ  ^0F ^85 BRANCH> ; \ if zero             (ZF=0)
-: IFA  ^0F ^86 BRANCH> ; \ if above            (CF=0 and ZF=0)
-: IFBE ^0F ^87 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
-: IFNS ^0F ^88 BRANCH> ; \ if positive         (SF=0)
-: IFS  ^0F ^89 BRANCH> ; \ if negative         (SF=1)
-: IFPO ^0F ^8A BRANCH> ; \ if parity odd       (PF=0)
-: IFPE ^0F ^8B BRANCH> ; \ if parity even      (PF=1)
-: IFGE ^0F ^8C BRANCH> ; \ if greater or equal (SF=OF)
-: IFL  ^0F ^8D BRANCH> ; \ if less             (SF<>OF)
-: IFG  ^0F ^8E BRANCH> ; \ if greater          (SF=OF)
-: IFLE ^0F ^8F BRANCH> ; \ if less or equal    (SF<>OF)
-
-[FORTH-DEFINITIONS]
-
 : THEN ( CT: orig -- ) ( RT: *a / *a -- *a )
     \ Resolve a forward branch.
     >TARGET ;
@@ -768,7 +746,37 @@
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^0F ^84 <BRANCH ; \ JZ branch
 
+: ?WHILE ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
+    \ Keep going while value is nonzero. Nondestructive.
+    \ Typical usage: begin ... ?while ... repeat
+    ^48 ^85 ^DB \ TEST RBX, RBX
+    ^0F ^84 BRANCH> ; \ JNZ branch
+    SWAP ;
+
+: REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
+    \ End a "begin ... while ..." loop.
+    \ This is equivalent to "again then".
+    ^E9 <BRANCH >TARGET ;
+
 [ASSEMBLER-DEFINITIONS]
+
+\ Like ?IF but use CPU flags instead of testing stack top.
+: IFNO ^0F ^80 BRANCH> ; \ if no overflow      (OF=0)
+: IFO  ^0F ^81 BRANCH> ; \ if overflow         (OF=1)
+: IFAE ^0F ^82 BRANCH> ; \ if above or equal   (CF=0)
+: IFB  ^0F ^83 BRANCH> ; \ if below            (CF=1)
+: IFNZ ^0F ^84 BRANCH> ; \ if non-equal        (ZF=1)
+: IFZ  ^0F ^85 BRANCH> ; \ if zero             (ZF=0)
+: IFA  ^0F ^86 BRANCH> ; \ if above            (CF=0 and ZF=0)
+: IFBE ^0F ^87 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
+: IFNS ^0F ^88 BRANCH> ; \ if positive         (SF=0)
+: IFS  ^0F ^89 BRANCH> ; \ if negative         (SF=1)
+: IFPO ^0F ^8A BRANCH> ; \ if parity odd       (PF=0)
+: IFPE ^0F ^8B BRANCH> ; \ if parity even      (PF=1)
+: IFGE ^0F ^8C BRANCH> ; \ if greater or equal (SF=OF)
+: IFL  ^0F ^8D BRANCH> ; \ if less             (SF<>OF)
+: IFG  ^0F ^8E BRANCH> ; \ if greater          (SF=OF)
+: IFLE ^0F ^8F BRANCH> ; \ if less or equal    (SF<>OF)
 
 \ Like ?UNTIL but using CPU flags instead of testing stack top.
 : UNTILNO ^0F ^80 <BRANCH ; \ until no overflow      (OF=0)
@@ -788,17 +796,6 @@
 : UNTILG  ^0F ^8E <BRANCH ; \ until greater          (SF=OF)
 : UNTILLE ^0F ^8F <BRANCH ; \ until less or equal    (SF<>OF)
 
-[FORTH-DEFINITIONS]
-
-: ?WHILE ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
-    \ Keep going while value is nonzero. Nondestructive.
-    \ Typical usage: begin ... ?while ... repeat
-    ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 BRANCH> ; \ JNZ branch
-    SWAP ;
-
-[ASSEMBLER-DEFINITIONS]
-
 \ Like ?WHILE but uses CPU flags instead of testing stack top.
 : WHILENO ^0F ^80 BRANCH> SWAP ; \ while no overflow      (OF=0)
 : WHILEO  ^0F ^81 BRANCH> SWAP ; \ while overflow         (OF=1)
@@ -816,13 +813,6 @@
 : WHILEL  ^0F ^8D BRANCH> SWAP ; \ while less             (SF<>OF)
 : WHILEG  ^0F ^8E BRANCH> SWAP ; \ while greater          (SF=OF)
 : WHILELE ^0F ^8F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
-
-[FORTH-DEFINITIONS]
-
-: REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
-    \ End a "begin ... while ..." loop.
-    \ This is equivalent to "again then".
-    ^E9 <BRANCH >TARGET ;
 
 [FORTH-DEFINITIONS]
 
