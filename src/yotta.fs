@@ -108,13 +108,13 @@
     \ below are emitted alongside any other instructions emitted
     \ by PREPARE-REX's caller. I.e. so we know that REX is prepared
     \ before any instruction that follows.
-    ^4B ^85 ^C0        \ TEST R8, R8
+    ^4D ^85 ^C0        \ TEST R8, R8
     ^75 ^12            \ JNZ +18
-    ^4B ^8B ^01        \ MOV R8, [R9]
-    ^4B ^89 ^41 ^01    \ MOV [R9+1], R8
-    ^4B ^8B ^C1        \ MOV R8, R9
+    ^4D ^8B ^01        \ MOV R8, [R9]
+    ^4D ^89 ^41 ^01    \ MOV [R9+1], R8
+    ^4D ^8B ^C1        \ MOV R8, R9
     ^41 ^C6 ^00 ^40    \ MOV [R8], 0x40
-    ^4B ^8D ^49 ^01    \ LEA R9, [R9+1]
+    ^4D ^8D ^49 ^01    \ LEA R9, [R9+1]
     ;
 
 : +W PREPARE-REX ^49 ^80 ^08 ^08 ; \ OR [R8], 0x08
@@ -192,6 +192,13 @@
 : MOVL> OPL ^89 ; : MOVL< OPL ^8B ;
 : MOVQ> OPQ ^89 ; : MOVQ< OPQ ^8B ;
 
+: MOVZXWB< OPW ^0F ^B6 ; : MOVSXWB< OPW ^0F ^BE ;
+: MOVZXLB< OPL ^0F ^B6 ; : MOVSXLB< OPL ^0F ^BE ;
+: MOVZXQB< OPQ ^0F ^B6 ; : MOVSXQB< OPQ ^0F ^BE ;
+: MOVZXLW< OPL ^0F ^B7 ; : MOVSXLW< OPL ^0F ^BF ;
+: MOVZXQW< OPQ ^0F ^B7 ; : MOVSXQW< OPQ ^0F ^BF ;
+( -------------------- ) : MOVSXQL< OPQ ^63     ;
+
 : LEAW< OPW ^8D ;
 : LEAL< OPL ^8D ;
 : LEAQ< OPQ ^8D ;
@@ -232,6 +239,22 @@
 : PUSHQ.  OPB ^6A ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 : PUSHQ:  OPL ^68 ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 
+\ Short jumps. These expect an immediate signed byte offset.
+: JO.  ^70 ; : JNO. ^71 ; : JB.  ^72 ; : JAE. ^73 ;
+: JZ.  ^74 ; : JNZ. ^75 ; : JBE. ^76 ; : JA.  ^77 ;
+: JS.  ^78 ; : JNS. ^79 ; : JPE. ^7A ; : JPO. ^7B ;
+: JL.  ^7C ; : JGE. ^7D ; : JLE. ^7E ; : JG.  ^7F ;
+: JMP. ^EB ; : JE.  ^74 ; : JNE. ^75 ;
+: LOOPNE. ^E0 ; : LOOPE. ^E1 ; : LOOP. ^E2 ; : JRCXZ. ^E3 ;
+
+\ Near jumps. These expect an immediate signed dword offset.
+:  JO: ^0F ^80 ; : JNO: ^0F ^81 ; :  JB: ^0F ^82 ; : JAE: ^0F ^83 ;
+:  JZ: ^0F ^84 ; : JNZ: ^0F ^85 ; : JBE: ^0F ^86 ; :  JA: ^0F ^87 ;
+:  JS: ^0F ^88 ; : JNS: ^0F ^89 ; : JPE: ^0F ^8A ; : JPO: ^0F ^8B ;
+:  JL: ^0F ^8C ; : JGE: ^0F ^8D ; : JLE: ^0F ^8E ; :  JG: ^0F ^8F ;
+: JMP: ^E9     ; :  JE: ^0F ^84 ; : JNE: ^0F ^85 ;
+: CALL: ^E8 ;
+
 \ Ops that expect a direct register argument.
 \ (Do not write a comma after the direct register argument!)
 \ E.g. PUSHQ# RAX
@@ -248,6 +271,15 @@
 : MOVQ#:: OPQ ^B8 ;
 
 \ Ops that expect a modrm argument only.
+
+: SETO_  OPB ^0F ^90 /0 ; : SETNO_ OPB ^0F ^91 /0 ;
+: SETB_  OPB ^0F ^92 /0 ; : SETAE_ OPB ^0F ^93 /0 ;
+: SETZ_  OPB ^0F ^94 /0 ; : SETNZ_ OPB ^0F ^95 /0 ;
+: SETBE_ OPB ^0F ^96 /0 ; : SETA_  OPB ^0F ^97 /0 ;
+: SETS_  OPB ^0F ^98 /0 ; : SETNS_ OPB ^0F ^99 /0 ;
+: SETPE_ OPB ^0F ^9A /0 ; : SETPO_ OPB ^0F ^9B /0 ;
+: SETL_  OPB ^0F ^9C /0 ; : SETGE_ OPB ^0F ^9D /0 ;
+: SETLE_ OPB ^0F ^9E /0 ; : SETG_  OPB ^0F ^9F /0 ;
 
 :  POPW_ OPW ^8F /0 ; :  POPQ_ OPL ^8F /0 ; \ forced to 64 bits
 : PUSHW_ OPW ^FF /6 ; : PUSHQ_ OPL ^FF /6 ; \ forced to 64 bits
@@ -274,6 +306,12 @@
 : JUMPQ_ OPL ^FF /4 ; \ forced to 64 bits
 
 \ Ops that expect a modrm argument and an immediate.
+
+: SHLB_. OPB ^C0 /4 ; : SHRB_. OPB ^C0 /5 ; : SARB_. OPB ^C0 /7 ;
+: SHLW_. OPW ^C1 /4 ; : SHRW_. OPW ^C1 /5 ; : SARW_. OPW ^C1 /7 ;
+: SHLL_. OPL ^C1 /4 ; : SHRL_. OPL ^C1 /5 ; : SARL_. OPL ^C1 /7 ;
+: SHLQ_. OPQ ^C1 /4 ; : SHRQ_. OPQ ^C1 /5 ; : SARQ_. OPQ ^C1 /7 ;
+
 : MOVB_.  OPB ^C6 /0 ;
 : MOVW_.. OPW ^C7 /0 ;
 : MOVL_:  OPL ^C7 /0 ;
@@ -382,22 +420,6 @@
 : R14] SIB=0 RM=6 +B ; : R14]. SIB=1 RM=6 +B ; : R14]: SIB=2 RM=6 +B ;
 : R15] SIB=0 RM=7 +B ; : R15]. SIB=1 RM=7 +B ; : R15]: SIB=2 RM=7 +B ;
 
-\ Short jumps. These expect an immediate signed byte offset.
-: JO.  ^70 ; : JNO. ^71 ; : JB.  ^72 ; : JAE. ^73 ;
-: JZ.  ^74 ; : JNZ. ^75 ; : JBE. ^76 ; : JA.  ^77 ;
-: JS.  ^78 ; : JNS. ^79 ; : JPE. ^7A ; : JPO. ^7B ;
-: JL.  ^7C ; : JGE. ^7D ; : JLE. ^7E ; : JG.  ^7F ;
-: JMP. ^EB ; : JE.  ^74 ; : JNE. ^75 ;
-: LOOPNE. ^E0 ; : LOOPE. ^E1 ; : LOOP. ^E2 ; : JRCXZ. ^E3 ;
-
-\ Near jumps. These expect an immediate signed dword offset.
-:  JO: ^0F ^80 ; : JNO: ^0F ^81 ; :  JB: ^0F ^82 ; : JAE: ^0F ^83 ;
-:  JZ: ^0F ^84 ; : JNZ: ^0F ^85 ; : JBE: ^0F ^86 ; :  JA: ^0F ^87 ;
-:  JS: ^0F ^88 ; : JNS: ^0F ^89 ; : JPE: ^0F ^8A ; : JPO: ^0F ^8B ;
-:  JL: ^0F ^8C ; : JGE: ^0F ^8D ; : JLE: ^0F ^8E ; :  JG: ^0F ^8F ;
-: JMP: ^E9     ; :  JE: ^0F ^84 ; : JNE: ^0F ^85 ;
-: CALL: ^E8 ;
-
 [KERNEL-DEFINITIONS]
 
 : CALL> ( -- )
@@ -493,6 +515,23 @@
     MOVQ> RDX, [R15]
     MOVQ< RBX, RAX ;
 
+: >R ( x -- ) ( R: -- x ) INLINE>
+    PUSHQ# RBX
+    DROP ;
+: 2>R ( x1 x2 -- ) ( R: -- x1 x2 ) INLINE>
+    PUSHQ_ [R15]
+    PUSHQ# RBX
+    MOVQ< RBX, [R15]. $08
+    LEAQ< R15, [R15]. $10 ;
+: R> ( R: x -- ) ( -- x ) INLINE>
+    DUP
+    POPQ# RBX ;
+: 2R> ( R: x1 x2 -- ) ( -- x1 x2 ) INLINE>
+    MOVQ> RBX, [R15]. $F8
+    LEAQ< R15, [R15]. $F0
+    POPQ# RBX
+    POPQ_ [R15]
+    ;
 : RDROP ( R: x -- ) INLINE>
     \ Drop top of return stack.
     LEAQ< RSP, [0+ RSP]. $08 ;
@@ -817,30 +856,44 @@
 
 [FORTH-DEFINITIONS]
 
-: + ( n1 n2 -- n3 ) INLINE/CALL>
+: + ( n1 n2 -- n3 ) CALL>
     \ Addition.
     ADDQ< RBX, [R15]
     NIP ;
-: - ( n1 n2 -- n3 ) INLINE/CALL>
+: - ( n1 n2 -- n3 ) CALL>
     \ Subtraction.
     MOVQ< RAX, [R15]
     NIP
     SUBQ< RAX, RBX
     MOVQ< RBX, RAX ;
-: * ( n1 n2 -- n3 ) INLINE/CALL>
+: * ( n1 n2 -- n3 ) CALL>
     \ Multiplication.
     IMULQ< RBX, [R15]
     NIP ;
+: < ( n1 n2 -- flag ) CALL>
+    SUBQ< RBX, [R15]
+    SARQ_. RBX $3F
+    NIP ;
+: > ( n1 n2 -- flag ) CALL>
+    SUBQ< RBX, [R15]
+    SARQ_. RBX $3F
+    NOTQ_ RBX
+    NIP ;
+: = ( n1 n2 -- flag ) CALL>
+    CMPQ< RBX, [R15]
+    SETNZ_ RBX
+    DECB_ RBX
+    MOVSXQB< RBX, RBX
+    NIP ;
 
-: /MOD ( i1 +i2 -- i3 i4 ) INLINE/CALL>
+: /MOD ( i1 +i2 -- i3 i4 ) CALL>
     \ Signed integer division.
     MOVQ< RAX, [R15]
     CQO
     IDIVQ_ RBX
     MOVQ> RAX, [R15]
     MOVQ< RBX, RDX ;
-
-: U/MOD ( u1 +u2 -- u3 u4 ) INLINE/CALL>
+: U/MOD ( u1 +u2 -- u3 u4 ) CALL>
     \ Unsigned integer division.
     MOVQ< RAX, [R15]
     XORL< RDX, RDX
@@ -850,6 +903,8 @@
 
 : NEGATE ( i1 -- i2 ) INLINE/CALL>
     NEGQ_ RBX ;
+: INVERT ( i1 -- i2 ) INLINE/CALL>
+    NOTQ_ RBX ;
 
 : .DIGITS ( u -- ) CALL>
     \ Print decimal digits of unsigned number.
@@ -912,6 +967,7 @@
     I32_MIN . CR
     I64_MAX .
     I64_MIN . CR
+    I8_MAX I8_MAX = . CR
     ;
 
 [ MAIN BYE ]
