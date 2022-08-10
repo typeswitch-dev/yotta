@@ -109,27 +109,33 @@
     \ by PREPARE-REX's caller. I.e. so we know that REX is prepared
     \ before any instruction that follows.
     ^4D ^85 ^C0        \ TEST R8, R8
-    ^75 ^12            \ JNZ +18
-    ^4D ^8B ^01        \ MOV R8, [R9]
-    ^4D ^89 ^41 ^01    \ MOV [R9+1], R8
-    ^4D ^8B ^C1        \ MOV R8, R9
-    ^41 ^C6 ^00 ^40    \ MOV [R8], 0x40
-    ^4D ^8D ^49 ^01    \ LEA R9, [R9+1]
+    ^75 ^16            \ JNZ +22
+    ^4D ^8B ^01        \ MOVQ< R8, [R9]
+    ^4D ^89 ^41 ^01    \ MOVQ> R8, [R9]. $01
+    ^4D ^8B ^C1        \ MOVQ< R8, R9
+    ^41 ^C6 ^00 ^40    \ MOVB_. [R8] 0x40
+    ^4D ^8D ^49 ^01    \ LEAQ< R9, [R9]. $01
+    ^48 ^8D ^7F ^01    \ LEAQ< RDI, [RDI]. $01
     ;
 
-: +W PREPARE-REX ^49 ^80 ^08 ^08 ; \ OR [R8], 0x08
-: +R PREPARE-REX ^49 ^80 ^08 ^04 ; \ OR [R8], 0x04
-: +X PREPARE-REX ^49 ^80 ^08 ^02 ; \ OR [R8], 0x02
-: +B PREPARE-REX ^49 ^80 ^08 ^01 ; \ OR [R8], 0x01
+: +W PREPARE-REX ^41 ^80 ^08 ^08 ; \ ORB_. [R8] 0x08
+: +R PREPARE-REX ^41 ^80 ^08 ^04 ; \ ORB_. [R8] 0x04
+: +X PREPARE-REX ^41 ^80 ^08 ^02 ; \ ORB_. [R8] 0x02
+: +B PREPARE-REX ^41 ^80 ^08 ^01 ; \ ORB_. [R8] 0x01
 
-: OPB ^49 ^89 ^F9 ; \ MOV R9, RDI
+: OPB ^4D ^33 ^C0   \ XOR R8, R8
+      ^49 ^89 ^F9 ; \ MOV R9, RDI
 
 : OPW ^B0 ^66 ^AA   \ MOV AL, 0x66; STOSB
-      ^45 ^33 ^C0 ; \ XOR R8, R8
+      ^4D ^33 ^C0   \ XOR R8, R8
       ^49 ^89 ^F9 ; \ MOV R9, RDI
 
-: OPL ^45 ^33 ^C0 ; \ XOR R8, R8
+: OPL ^4D ^33 ^C0   \ XOR R8, R8
       ^49 ^89 ^F9 ; \ MOV R9, RDI
+
+: OPL' ^49 ^89 ^F8   \ MOV R8, RDI
+       ^B0 ^48 ^AA   \ MOV AL, 0x40; STOSB
+       ^49 ^89 ^F9 ; \ MOV R9, RDI
 
 : OPQ ^49 ^89 ^F8   \ MOV R8, RDI
       ^B0 ^48 ^AA   \ MOV AL, 0x48; STOSB
@@ -162,8 +168,8 @@
 
 : CWD OPW ^99 ; : CDQ OPL ^99 ; : CQO OPQ ^99 ;
 
-: RET OPL ^C3 ;
-: SYSCALL ^0F ^05 ;
+: RET     OPL ^C3 ;
+: SYSCALL OPL ^0F ^05 ;
 
 \ Ops that expect both a register and modrm argument.
 \ E.g.  MOVQ< RBX, [RAX]
@@ -186,6 +192,11 @@
 : ORW< OPW ^0B ; : SBBW< OPW ^1B ; : SUBW< OPW ^2B ; : CMPW< OPW ^3B ;
 : ORL< OPL ^0B ; : SBBL< OPL ^1B ; : SUBL< OPL ^2B ; : CMPL< OPL ^3B ;
 : ORQ< OPQ ^0B ; : SBBQ< OPQ ^1B ; : SUBQ< OPQ ^2B ; : CMPQ< OPQ ^3B ;
+
+: TESTB> OPB ^84 ;
+: TESTW> OPW ^85 ;
+: TESTL> OPL ^85 ;
+: TESTQ> OPQ ^85 ;
 
 : MOVB> OPB ^88 ; : MOVB< OPB ^8A ;
 : MOVW> OPW ^89 ; : MOVW< OPW ^8B ;
@@ -236,7 +247,7 @@
 : SUB-RAX: OPQ ^2D ; : CMP-RAX: OPQ ^3D ;
 
 : PUSHW.. OPW ^68 ;
-: PUSHQ.  OPB ^6A ; \ Pushes 64-bits even without REX.W prefix. TODO verify
+: PUSHQ.  OPL ^6A ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 : PUSHQ:  OPL ^68 ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 
 \ Short jumps. These expect an immediate signed byte offset.
@@ -265,6 +276,7 @@
 \ Ops that expect a direct register argument and an immediate.
 \ (Do not write a comma after the direct register argument!)
 \ E.g.  MOVL#: RAX $10203040  ( MOV EAX, 10203040h )
+\       MOVW#: R13 $1020      ( MOV R13, 1020h )
 : MOVB#.  OPB ^B0 ;
 : MOVW#.. OPW ^B8 ;
 : MOVL#:  OPL ^B8 ;
@@ -315,6 +327,7 @@
 : MOVB_.  OPB ^C6 /0 ;
 : MOVW_.. OPW ^C7 /0 ;
 : MOVL_:  OPL ^C7 /0 ;
+: MOVL_:'  OPL' ^C7 /0 ;
 : MOVQ_:  OPQ ^C7 /0 ; \ 32-bit immediate sign-extended to 64-bits
 
 : TESTB_.  OPB ^F6 /0 ;
@@ -487,7 +500,7 @@
 
 [FORTH-DEFINITIONS]
 
-\ Basic stack words. These preserve non-stack registers (RBX, R15).
+\ Simpler stack words. These preserve non-stack registers (RBX, R15).
 : DUP ( a -- a a ) INLINE/CALL>
     LEAQ< R15, [R15]. $F8
     MOVQ> RBX, [R15] ;
@@ -496,6 +509,14 @@
 : DROP ( a -- ) INLINE/CALL>
     MOVQ< RBX, [R15]
     LEAQ< R15, [R15]. $08 ;
+: OVER ( a b -- a b a ) INLINE/CALL>
+    DUP
+    MOVQ< RBX, [R15]. $08 ;
+: 2DUP ( a b -- a b a b ) INLINE/CALL>
+    OVER OVER ;
+: 2DROP ( a b -- ) INLINE/CALL>
+    MOVQ< RBX, [R15]. $08
+    LEAQ< R15, [R15]. $10 ;
 
 \ Deeper stack words. These can trash RAX and RDX.
 : SWAP ( a b -- b a ) INLINE/CALL>
@@ -514,6 +535,11 @@
     MOVQ> RBX, [R15]. $08
     MOVQ> RDX, [R15]
     MOVQ< RBX, RAX ;
+: TUCK ( a b -- b a b ) INLINE/CALL>
+    MOVQ< RAX, [R15]
+    MOVQ> RBX, [R15]
+    LEAQ< R15, [R15]. $F8
+    MOVQ> RAX, [R15] ;
 
 : >R ( x -- ) ( R: -- x ) INLINE>
     PUSHQ# RBX
@@ -956,6 +982,67 @@
 : U64_MAX INLINE/CALL> I:  $FFFFFFFF ;
 : U64_MIN INLINE/CALL> 0 ;
 
+[KERNEL-DEFINITIONS]
+
+: [SETUP2]
+    \ MOVL#: R8 $01020304
+    MOVL_: R10 $00000000
+    XORQ< R13, R13
+    LEAQ< R14, [RBP]: $0F800000
+    ;
+[SETUP2]
+
+: T> ( T: ty -- ) ( -- ty ) CALL>
+   \ Pop a value type from type stack.
+   0 ;
+: 2T> ( T: ty1 ty2 -- ) ( -- ty1 ty2 ) CALL>
+   \ Pop two value types from type stack.
+    T> >R T> R> ;
+: 3T> ( T: ty1 ty2 ty3 -- ) ( -- ty1 ty2 ty3 ) CALL>
+    T> >R 2T> R> ;
+
+: >T ( ty -- ) ( T: -- ty ) CALL>
+    \ Push a value type on the type stack.
+    DROP ;
+: 2>T ( ty1 ty2 -- ) ( T: -- ty1 ty2 ) CALL>
+    \ Push two value types on the type stack.
+    >R >T R> >T ;
+: 3>T ( ty1 ty2 ty3 -- ) ( T: -- ty1 ty2 ty3 ) CALL>
+    \ Push three value types on the type stack.
+    >R 2>T R> >T ;
+
+\ [MIRTH-DEFINITIONS]
+
+: { SKIP-UNTIL. $7D ;
+: dup { A +dup } ( A -- A A )
+    T> DUP >T >T \ TODO check type has +dup trait, & use type-specific action
+    CALL> DUP ;
+: drop { A +drop } ( A -- )
+    T> DROP \ TODO check type has +drop trait, & use type-specific action
+    CALL> DROP ;
+: nip { A +drop } { B } ( A B -- B )
+    2T> NIP 2>T
+    CALL> NIP ;
+: swap { A B } ( A B -- B A )
+    2T> SWAP 2>T \ TODO handle wider types maybe
+    CALL> SWAP ;
+: rotl { A B C } ( A B C -- B C A )
+    3T> ROTL 3>T \ TODO handle wider types maybe
+    CALL> ROTL ;
+: rotr { A B C } ( A B C -- C A B )
+    3T> ROTR 3>T \ TODO handle wider types maybe
+    CALL> ROTR ;
+
+: 2dup { A +dup } { B +dup } ( A B -- A B A B )
+    2T> 2DUP 2>T 2>T
+    CALL> 2DROP ;
+
+: 2drop { A +drop } { B +drop } ( A B -- )
+    2T> 2DROP
+    CALL> 2DROP ;
+
+[FORTH-DEFINITIONS]
+
 : MAIN CALL>
     'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
     U. $0A . CR
@@ -968,6 +1055,10 @@
     I64_MAX .
     I64_MIN . CR
     I8_MAX I8_MAX = . CR
+    DUP
+    MOVQ< RBX, RDI
+    SUBQ< RBX, [RBP]: $USER.PROG
+    . CR
     ;
 
 [ MAIN BYE ]
