@@ -755,14 +755,14 @@
     ^EB BRANCH> ;
 : ?IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
-    \ if top of stack is nonzero, otherwise takes
-    \ the second branch.
+    \ if top of stack is nonzero, otherwise skips
+    \ to THEN or ELSE.
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^74 BRANCH> ; \ JZ branch
 : <IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
-    \ if top of stack is negative, otherwise takes
-    \ the second branch.
+    \ if top of stack is negative, otherwise skips
+    \ to THEN or ELSE.
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^79 BRANCH> ; \ JNS branch
 
