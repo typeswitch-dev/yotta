@@ -96,8 +96,7 @@
     \ "Header" of PREPARE-REX, which compiles a call to the body.
     \ This is what gets executed when PREPARE-REX is interpreted.
     \ Note that this is the same as the header of CALL> ... it's
-    \ just in machine code because we can't implement CALL>
-    \ nicely yet.
+    \ just in machine code because we can't implement CALL> yet.
     ^E8                     \ emit E8 byte ( E8 xx xx xx xx = CALL NEAR )
     $48 $8D $05 $00000001   \ LEA RAX, [RIP+1]
     $48 $2B $C7             \ SUB RAX, RDI
@@ -481,13 +480,13 @@
     MOVQ< RAX, [R15]
     MOVQ> RBX, [R15]
     MOVQ< RBX, RAX ;
-: rotl ( a b c -- b c a ) INLINE/CALL>
+: ROTL ( a b c -- b c a ) INLINE/CALL>
     MOVQ< RAX, [R15]. $08
     MOVQ< RDX, [R15]
     MOVQ> RBX, [R15]
     MOVQ> RBX, [R15]. $08
     MOVQ< RBX, RAX ;
-: rotr ( a b c -- c a b ) INLINE/CALL>
+: ROTR ( a b c -- c a b ) INLINE/CALL>
     MOVQ< RDX, [R15]. $08
     MOVQ< RAX, [R15]
     MOVQ> RBX, [R15]. $08
@@ -668,13 +667,15 @@
 : BRANCH-TOO-BIG CALL>
     \ TODO display message.
     MOVL#: RAX $SYS_EXIT
-    MOVL#: RDI $00000010
+    MOVL#: RDI $00000011
     SYSCALL ;
-: VERIFY-BRANCH-OFFSET CALL>
-    CMP-RAX: $7FFFFFFF
+: VERIFY-BRANCH-OFFSET ( -- ) CALL>
+    \ Verify that branch offset in RAX fits in a signed byte.
+    \ Otherwise panics with a BRANCH-TOO-BIG error.
+    CMP-RAX: $0000007F
     JLE.  $05
     BRANCH-TOO-BIG
-    CMP-RAX: $80000000
+    CMP-RAX: $FFFFFF80
     JGE.  $05
     BRANCH-TOO-BIG ;
 
@@ -686,13 +687,13 @@
     DUP
     MOVQ< RBX, RDI
     XORQ< RAX, RAX
-    STOSL ;
+    STOSB ;
 : >TARGET ( orig -- ) CALL>
     \ Resolve forward branch.
-    LEAQ< RAX, [RDI]. $FC
+    LEAQ< RAX, [RDI]. $FF
     SUBQ< RAX, RBX
     VERIFY-BRANCH-OFFSET
-    MOVL> RAX, [RBX] \ 32 bit move
+    MOVB> RAX, [RBX]
     DROP ;
 
 : TARGET< ( -- dest ) CALL>
@@ -703,35 +704,35 @@
 : <BRANCH ( dest -- ) CALL>
     \ Push offset to backward branch target.
     SUBQ< RBX, RDI
-    LEAQ< RAX, [RBX]. $FC
+    LEAQ< RAX, [RBX]. $FF
     VERIFY-BRANCH-OFFSET
-    STOSL
+    STOSB
     DROP ;
 
 [FORTH-DEFINITIONS]
 
 : AHEAD ( CT: -- orig ) ( RT: *a -- *a / *b )
     \ Always branches forward.
-    ^E9 BRANCH> ;
+    ^EB BRANCH> ;
 : ?IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
     \ if top of stack is nonzero, otherwise takes
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 BRANCH> ; \ JZ branch
+    ^74 BRANCH> ; \ JZ branch
 : <IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
     \ if top of stack is negative, otherwise takes
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^89 BRANCH> ; \ JNS branch
+    ^79 BRANCH> ; \ JNS branch
 
 : THEN ( CT: orig -- ) ( RT: *a / *a -- *a )
     \ Resolve a forward branch.
     >TARGET ;
 : ELSE ( CT: orig1 -- orig2 ) ( RT: *a / *b -- *b / *a )
     \ Swap between branches.
-    ^E9 BRANCH> SWAP >TARGET ;
+    ^EB BRANCH> SWAP >TARGET ;
 
 : BEGIN ( CT: -- dest ) ( RT: *a -- ~*a / *a )
     \ Begin a loop.
@@ -739,80 +740,80 @@
 : AGAIN ( CT: dest -- ) ( RT: *~a / *a -- *b )
     \ Loop forever.
     \ Used at end of loop, e.g. BEGIN ... AGAIN
-    ^E9 <BRANCH ;
+    ^EB <BRANCH ;
 : ?UNTIL ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
     \ Keep going until nonzero. Nondestructive.
     \ Used at end of loop, e.g. BEGIN ... ?UNTIL
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 <BRANCH ; \ JZ branch
+    ^74 <BRANCH ; \ JZ branch
 
 : ?WHILE ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
     \ Keep going while value is nonzero. Nondestructive.
     \ Typical usage: begin ... ?while ... repeat
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 BRANCH> ; \ JNZ branch
+    ^74 BRANCH> ; \ JNZ branch
     SWAP ;
 
 : REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
     \ End a "begin ... while ..." loop.
     \ This is equivalent to "again then".
-    ^E9 <BRANCH >TARGET ;
+    ^EB <BRANCH >TARGET ;
 
 [ASSEMBLER-DEFINITIONS]
 
 \ Like ?IF but use CPU flags instead of testing stack top.
-: IFNO ^0F ^80 BRANCH> ; \ if no overflow      (OF=0)
-: IFO  ^0F ^81 BRANCH> ; \ if overflow         (OF=1)
-: IFAE ^0F ^82 BRANCH> ; \ if above or equal   (CF=0)
-: IFB  ^0F ^83 BRANCH> ; \ if below            (CF=1)
-: IFNZ ^0F ^84 BRANCH> ; \ if non-equal        (ZF=1)
-: IFZ  ^0F ^85 BRANCH> ; \ if zero             (ZF=0)
-: IFA  ^0F ^86 BRANCH> ; \ if above            (CF=0 and ZF=0)
-: IFBE ^0F ^87 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
-: IFNS ^0F ^88 BRANCH> ; \ if positive         (SF=0)
-: IFS  ^0F ^89 BRANCH> ; \ if negative         (SF=1)
-: IFPO ^0F ^8A BRANCH> ; \ if parity odd       (PF=0)
-: IFPE ^0F ^8B BRANCH> ; \ if parity even      (PF=1)
-: IFGE ^0F ^8C BRANCH> ; \ if greater or equal (SF=OF)
-: IFL  ^0F ^8D BRANCH> ; \ if less             (SF<>OF)
-: IFG  ^0F ^8E BRANCH> ; \ if greater          (SF=OF)
-: IFLE ^0F ^8F BRANCH> ; \ if less or equal    (SF<>OF)
+: IFNO ^70 BRANCH> ; \ if no overflow      (OF=0)
+: IFO  ^71 BRANCH> ; \ if overflow         (OF=1)
+: IFAE ^72 BRANCH> ; \ if above or equal   (CF=0)
+: IFB  ^73 BRANCH> ; \ if below            (CF=1)
+: IFNZ ^74 BRANCH> ; \ if non-equal        (ZF=1)
+: IFZ  ^75 BRANCH> ; \ if zero             (ZF=0)
+: IFA  ^76 BRANCH> ; \ if above            (CF=0 and ZF=0)
+: IFBE ^77 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
+: IFNS ^78 BRANCH> ; \ if positive         (SF=0)
+: IFS  ^79 BRANCH> ; \ if negative         (SF=1)
+: IFPO ^7A BRANCH> ; \ if parity odd       (PF=0)
+: IFPE ^7B BRANCH> ; \ if parity even      (PF=1)
+: IFGE ^7C BRANCH> ; \ if greater or equal (SF=OF)
+: IFL  ^7D BRANCH> ; \ if less             (SF<>OF)
+: IFG  ^7E BRANCH> ; \ if greater          (SF=OF)
+: IFLE ^7F BRANCH> ; \ if less or equal    (SF<>OF)
 
 \ Like ?UNTIL but using CPU flags instead of testing stack top.
-: UNTILNO ^0F ^80 <BRANCH ; \ until no overflow      (OF=0)
-: UNTILO  ^0F ^81 <BRANCH ; \ until overflow         (OF=1)
-: UNTILAE ^0F ^82 <BRANCH ; \ until above or equal   (CF=0)
-: UNTILB  ^0F ^83 <BRANCH ; \ until below            (CF=1)
-: UNTILNZ ^0F ^84 <BRANCH ; \ until non-equal        (ZF=1)
-: UNTILZ  ^0F ^85 <BRANCH ; \ until zero             (ZF=0)
-: UNTILA  ^0F ^86 <BRANCH ; \ until above            (CF=0 and ZF=0)
-: UNTILBE ^0F ^87 <BRANCH ; \ until below or equal   (CF=1 or  ZF=1)
-: UNTILNS ^0F ^88 <BRANCH ; \ until positive         (SF=0)
-: UNTILS  ^0F ^89 <BRANCH ; \ until negative         (SF=1)
-: UNTILPO ^0F ^8A <BRANCH ; \ until parity odd       (PF=0)
-: UNTILPE ^0F ^8B <BRANCH ; \ until parity even      (PF=1)
-: UNTILGE ^0F ^8C <BRANCH ; \ until greater or equal (SF=OF)
-: UNTILL  ^0F ^8D <BRANCH ; \ until less             (SF<>OF)
-: UNTILG  ^0F ^8E <BRANCH ; \ until greater          (SF=OF)
-: UNTILLE ^0F ^8F <BRANCH ; \ until less or equal    (SF<>OF)
+: UNTILNO ^70 <BRANCH ; \ until no overflow      (OF=0)
+: UNTILO  ^71 <BRANCH ; \ until overflow         (OF=1)
+: UNTILAE ^72 <BRANCH ; \ until above or equal   (CF=0)
+: UNTILB  ^73 <BRANCH ; \ until below            (CF=1)
+: UNTILNZ ^74 <BRANCH ; \ until non-equal        (ZF=1)
+: UNTILZ  ^75 <BRANCH ; \ until zero             (ZF=0)
+: UNTILA  ^76 <BRANCH ; \ until above            (CF=0 and ZF=0)
+: UNTILBE ^77 <BRANCH ; \ until below or equal   (CF=1 or  ZF=1)
+: UNTILNS ^78 <BRANCH ; \ until positive         (SF=0)
+: UNTILS  ^79 <BRANCH ; \ until negative         (SF=1)
+: UNTILPO ^7A <BRANCH ; \ until parity odd       (PF=0)
+: UNTILPE ^7B <BRANCH ; \ until parity even      (PF=1)
+: UNTILGE ^7C <BRANCH ; \ until greater or equal (SF=OF)
+: UNTILL  ^7D <BRANCH ; \ until less             (SF<>OF)
+: UNTILG  ^7E <BRANCH ; \ until greater          (SF=OF)
+: UNTILLE ^7F <BRANCH ; \ until less or equal    (SF<>OF)
 
 \ Like ?WHILE but uses CPU flags instead of testing stack top.
-: WHILENO ^0F ^80 BRANCH> SWAP ; \ while no overflow      (OF=0)
-: WHILEO  ^0F ^81 BRANCH> SWAP ; \ while overflow         (OF=1)
-: WHILEAE ^0F ^82 BRANCH> SWAP ; \ while above or equal   (CF=0)
-: WHILEB  ^0F ^83 BRANCH> SWAP ; \ while below            (CF=1)
-: WHILENZ ^0F ^84 BRANCH> SWAP ; \ while non-equal        (ZF=1)
-: WHILEZ  ^0F ^85 BRANCH> SWAP ; \ while zero             (ZF=0)
-: WHILEA  ^0F ^86 BRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
-: WHILEBE ^0F ^87 BRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
-: WHILENS ^0F ^88 BRANCH> SWAP ; \ while positive         (SF=0)
-: WHILES  ^0F ^89 BRANCH> SWAP ; \ while negative         (SF=1)
-: WHILEPO ^0F ^8A BRANCH> SWAP ; \ while parity odd       (PF=0)
-: WHILEPE ^0F ^8B BRANCH> SWAP ; \ while parity even      (PF=1)
-: WHILEGE ^0F ^8C BRANCH> SWAP ; \ while greater or equal (SF=OF)
-: WHILEL  ^0F ^8D BRANCH> SWAP ; \ while less             (SF<>OF)
-: WHILEG  ^0F ^8E BRANCH> SWAP ; \ while greater          (SF=OF)
-: WHILELE ^0F ^8F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
+: WHILENO ^70 BRANCH> SWAP ; \ while no overflow      (OF=0)
+: WHILEO  ^71 BRANCH> SWAP ; \ while overflow         (OF=1)
+: WHILEAE ^72 BRANCH> SWAP ; \ while above or equal   (CF=0)
+: WHILEB  ^73 BRANCH> SWAP ; \ while below            (CF=1)
+: WHILENZ ^74 BRANCH> SWAP ; \ while non-equal        (ZF=1)
+: WHILEZ  ^75 BRANCH> SWAP ; \ while zero             (ZF=0)
+: WHILEA  ^76 BRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
+: WHILEBE ^77 BRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
+: WHILENS ^78 BRANCH> SWAP ; \ while positive         (SF=0)
+: WHILES  ^79 BRANCH> SWAP ; \ while negative         (SF=1)
+: WHILEPO ^7A BRANCH> SWAP ; \ while parity odd       (PF=0)
+: WHILEPE ^7B BRANCH> SWAP ; \ while parity even      (PF=1)
+: WHILEGE ^7C BRANCH> SWAP ; \ while greater or equal (SF=OF)
+: WHILEL  ^7D BRANCH> SWAP ; \ while less             (SF<>OF)
+: WHILEG  ^7E BRANCH> SWAP ; \ while greater          (SF=OF)
+: WHILELE ^7F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
 
 [FORTH-DEFINITIONS]
 
@@ -903,13 +904,13 @@
 : MAIN CALL>
     'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
     U. $0A . CR
-    I8_MAX . CR
+    I8_MAX .
     I8_MIN . CR
-    I16_MAX . CR
+    I16_MAX .
     I16_MIN . CR
-    I32_MAX . CR
+    I32_MAX .
     I32_MIN . CR
-    I64_MAX . CR
+    I64_MAX .
     I64_MIN . CR
     ;
 
