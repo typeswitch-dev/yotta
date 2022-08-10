@@ -668,7 +668,7 @@
 : BRANCH-TOO-BIG CALL>
     \ TODO display message.
     MOVL#: RAX $SYS_EXIT
-    MOVL#: RDI $00000005
+    MOVL#: RDI $00000010
     SYSCALL ;
 : VERIFY-BRANCH-OFFSET CALL>
     CMP-RAX: $7FFFFFFF
@@ -715,7 +715,7 @@
 
 [FORTH-DEFINITIONS]
 
-: ahead ( CT: -- orig ) ( RT: *a -- *a / *b )
+: AHEAD ( CT: -- orig ) ( RT: *a -- *a / *b )
     \ Always branches forward.
     ^E9 MKBRANCH> ;
 : ?IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
@@ -730,6 +730,29 @@
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^0F ^89 MKBRANCH> ; \ JNS branch
+
+[ASSEMBLER-DEFINITIONS]
+
+\ Like ?IF but use CPU flags instead of testing stack top.
+: IFNO ^0F ^80 MKBRANCH> ; \ if no overflow      (OF=0)
+: IFO  ^0F ^81 MKBRANCH> ; \ if overflow         (OF=1)
+: IFAE ^0F ^82 MKBRANCH> ; \ if above or equal   (CF=0)
+: IFB  ^0F ^83 MKBRANCH> ; \ if below            (CF=1)
+: IFNZ ^0F ^84 MKBRANCH> ; \ if non-equal        (ZF=1)
+: IFZ  ^0F ^85 MKBRANCH> ; \ if zero             (ZF=0)
+: IFA  ^0F ^86 MKBRANCH> ; \ if above            (CF=0 and ZF=0)
+: IFBE ^0F ^87 MKBRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
+: IFNS ^0F ^88 MKBRANCH> ; \ if positive         (SF=0)
+: IFS  ^0F ^89 MKBRANCH> ; \ if negative         (SF=1)
+: IFPO ^0F ^8A MKBRANCH> ; \ if parity odd       (PF=0)
+: IFPE ^0F ^8B MKBRANCH> ; \ if parity even      (PF=1)
+: IFGE ^0F ^8C MKBRANCH> ; \ if greater or equal (SF=OF)
+: IFL  ^0F ^8D MKBRANCH> ; \ if less             (SF<>OF)
+: IFG  ^0F ^8E MKBRANCH> ; \ if greater          (SF=OF)
+: IFLE ^0F ^8F MKBRANCH> ; \ if less or equal    (SF<>OF)
+
+[FORTH-DEFINITIONS]
+
 : THEN ( CT: orig -- ) ( RT: *a / *a -- *a )
     \ Resolve a forward branch.
     >MKTARGET ;
@@ -750,12 +773,56 @@
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^0F ^84 <MKBRANCH ; \ JZ branch
 
+[ASSEMBLER-DEFINITIONS]
+
+\ Like ?UNTIL but using CPU flags instead of testing stack top.
+: UNTILNO ^0F ^80 <MKBRANCH ; \ until no overflow      (OF=0)
+: UNTILO  ^0F ^81 <MKBRANCH ; \ until overflow         (OF=1)
+: UNTILAE ^0F ^82 <MKBRANCH ; \ until above or equal   (CF=0)
+: UNTILB  ^0F ^83 <MKBRANCH ; \ until below            (CF=1)
+: UNTILNZ ^0F ^84 <MKBRANCH ; \ until non-equal        (ZF=1)
+: UNTILZ  ^0F ^85 <MKBRANCH ; \ until zero             (ZF=0)
+: UNTILA  ^0F ^86 <MKBRANCH ; \ until above            (CF=0 and ZF=0)
+: UNTILBE ^0F ^87 <MKBRANCH ; \ until below or equal   (CF=1 or  ZF=1)
+: UNTILNS ^0F ^88 <MKBRANCH ; \ until positive         (SF=0)
+: UNTILS  ^0F ^89 <MKBRANCH ; \ until negative         (SF=1)
+: UNTILPO ^0F ^8A <MKBRANCH ; \ until parity odd       (PF=0)
+: UNTILPE ^0F ^8B <MKBRANCH ; \ until parity even      (PF=1)
+: UNTILGE ^0F ^8C <MKBRANCH ; \ until greater or equal (SF=OF)
+: UNTILL  ^0F ^8D <MKBRANCH ; \ until less             (SF<>OF)
+: UNTILG  ^0F ^8E <MKBRANCH ; \ until greater          (SF=OF)
+: UNTILLE ^0F ^8F <MKBRANCH ; \ until less or equal    (SF<>OF)
+
+[FORTH-DEFINITIONS]
+
 : ?WHILE ( CT: dest -- orig dest ) ( RT: ~*a / *b x -- *b x / ~*a / *b x )
     \ Keep going while value is nonzero. Nondestructive.
     \ Typical usage: begin ... ?while ... repeat
     ^48 ^85 ^DB \ TEST RBX, RBX
     ^0F ^84 MKBRANCH> ; \ JNZ branch
     SWAP ;
+
+[ASSEMBLER-DEFINITIONS]
+
+\ Like ?WHILE but uses CPU flags instead of testing stack top.
+: WHILENO ^0F ^80 MKBRANCH> SWAP ; \ while no overflow      (OF=0)
+: WHILEO  ^0F ^81 MKBRANCH> SWAP ; \ while overflow         (OF=1)
+: WHILEAE ^0F ^82 MKBRANCH> SWAP ; \ while above or equal   (CF=0)
+: WHILEB  ^0F ^83 MKBRANCH> SWAP ; \ while below            (CF=1)
+: WHILENZ ^0F ^84 MKBRANCH> SWAP ; \ while non-equal        (ZF=1)
+: WHILEZ  ^0F ^85 MKBRANCH> SWAP ; \ while zero             (ZF=0)
+: WHILEA  ^0F ^86 MKBRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
+: WHILEBE ^0F ^87 MKBRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
+: WHILENS ^0F ^88 MKBRANCH> SWAP ; \ while positive         (SF=0)
+: WHILES  ^0F ^89 MKBRANCH> SWAP ; \ while negative         (SF=1)
+: WHILEPO ^0F ^8A MKBRANCH> SWAP ; \ while parity odd       (PF=0)
+: WHILEPE ^0F ^8B MKBRANCH> SWAP ; \ while parity even      (PF=1)
+: WHILEGE ^0F ^8C MKBRANCH> SWAP ; \ while greater or equal (SF=OF)
+: WHILEL  ^0F ^8D MKBRANCH> SWAP ; \ while less             (SF<>OF)
+: WHILEG  ^0F ^8E MKBRANCH> SWAP ; \ while greater          (SF=OF)
+: WHILELE ^0F ^8F MKBRANCH> SWAP ; \ while less or equal    (SF<>OF)
+
+[FORTH-DEFINITIONS]
 
 : REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
     \ End a "begin ... while ..." loop.
@@ -816,18 +883,20 @@
 : PARSE-NAME ( "<spaces>name" -- c-addr u ) CALL>
     \ Parse a name from source stream.
     \ TODO Proper bounds checking.
-    LODSB
-    CMP-AL. $20
-    JBE. $FB
+    BEGIN
+        LODSB
+        CMP-AL. $20
+    UNTILA
     LEAQ< R15, [R15]. $F0
     MOVQ> RBX, [R15]. $08
     LEAQ< RBX, [RSI]. $FF
     MOVQ> RBX, [R15]
     XORL< RBX, RBX
-    INCQ_ RBX
-    LODSB
-    CMP-AL. $20
-    JA. $F8 ;
+    BEGIN
+        INCQ_ RBX
+        LODSB
+        CMP-AL. $20
+    UNTILBE ;
 
 :  I8_MAX INLINE/CALL> U.  $7F ;
 :  I8_MIN INLINE/CALL> I:  $FFFFFF80 ;
