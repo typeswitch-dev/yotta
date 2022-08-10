@@ -680,14 +680,14 @@
 
 [ASSEMBLER-DEFINITIONS]
 
-: MKBRANCH> ( -- orig ) CALL>
+: BRANCH> ( -- orig ) CALL>
     \ Create blank offset for forward branch.
     \ Must be resolved by >TARGET.
     DUP
     MOVQ< RBX, RDI
     XORQ< RAX, RAX
     STOSL ;
-: >MKTARGET ( orig -- ) CALL>
+: >TARGET ( orig -- ) CALL>
     \ Resolve forward branch.
     LEAQ< RAX, [RDI]. $FC
     SUBQ< RAX, RBX
@@ -695,12 +695,12 @@
     MOVL> RAX, [RBX] \ 32 bit move
     DROP ;
 
-: MKTARGET< ( -- dest ) CALL>
+: TARGET< ( -- dest ) CALL>
     \ Push current location as backward branch target.
     \ May be used by <BRANCH any number of times.
     DUP
     MOVQ< RBX, RDI ;
-: <MKBRANCH ( dest -- ) CALL>
+: <BRANCH ( dest -- ) CALL>
     \ Push offset to backward branch target.
     SUBQ< RBX, RDI
     LEAQ< RAX, [RBX]. $FC
@@ -708,90 +708,85 @@
     STOSL
     DROP ;
 
-: BRANCH> MKBRANCH> ;
-: >TARGET >MKTARGET ;
-: <BRANCH <MKBRANCH ;
-: TARGET< MKTARGET< ;
-
 [FORTH-DEFINITIONS]
 
 : AHEAD ( CT: -- orig ) ( RT: *a -- *a / *b )
     \ Always branches forward.
-    ^E9 MKBRANCH> ;
+    ^E9 BRANCH> ;
 : ?IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
     \ if top of stack is nonzero, otherwise takes
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 MKBRANCH> ; \ JZ branch
+    ^0F ^84 BRANCH> ; \ JZ branch
 : <IF ( CT: -- orig ) ( RT: *a x -- *a x / *a x )
     \ Non-destructive IF. Takes the first branch
     \ if top of stack is negative, otherwise takes
     \ the second branch.
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^89 MKBRANCH> ; \ JNS branch
+    ^0F ^89 BRANCH> ; \ JNS branch
 
 [ASSEMBLER-DEFINITIONS]
 
 \ Like ?IF but use CPU flags instead of testing stack top.
-: IFNO ^0F ^80 MKBRANCH> ; \ if no overflow      (OF=0)
-: IFO  ^0F ^81 MKBRANCH> ; \ if overflow         (OF=1)
-: IFAE ^0F ^82 MKBRANCH> ; \ if above or equal   (CF=0)
-: IFB  ^0F ^83 MKBRANCH> ; \ if below            (CF=1)
-: IFNZ ^0F ^84 MKBRANCH> ; \ if non-equal        (ZF=1)
-: IFZ  ^0F ^85 MKBRANCH> ; \ if zero             (ZF=0)
-: IFA  ^0F ^86 MKBRANCH> ; \ if above            (CF=0 and ZF=0)
-: IFBE ^0F ^87 MKBRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
-: IFNS ^0F ^88 MKBRANCH> ; \ if positive         (SF=0)
-: IFS  ^0F ^89 MKBRANCH> ; \ if negative         (SF=1)
-: IFPO ^0F ^8A MKBRANCH> ; \ if parity odd       (PF=0)
-: IFPE ^0F ^8B MKBRANCH> ; \ if parity even      (PF=1)
-: IFGE ^0F ^8C MKBRANCH> ; \ if greater or equal (SF=OF)
-: IFL  ^0F ^8D MKBRANCH> ; \ if less             (SF<>OF)
-: IFG  ^0F ^8E MKBRANCH> ; \ if greater          (SF=OF)
-: IFLE ^0F ^8F MKBRANCH> ; \ if less or equal    (SF<>OF)
+: IFNO ^0F ^80 BRANCH> ; \ if no overflow      (OF=0)
+: IFO  ^0F ^81 BRANCH> ; \ if overflow         (OF=1)
+: IFAE ^0F ^82 BRANCH> ; \ if above or equal   (CF=0)
+: IFB  ^0F ^83 BRANCH> ; \ if below            (CF=1)
+: IFNZ ^0F ^84 BRANCH> ; \ if non-equal        (ZF=1)
+: IFZ  ^0F ^85 BRANCH> ; \ if zero             (ZF=0)
+: IFA  ^0F ^86 BRANCH> ; \ if above            (CF=0 and ZF=0)
+: IFBE ^0F ^87 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
+: IFNS ^0F ^88 BRANCH> ; \ if positive         (SF=0)
+: IFS  ^0F ^89 BRANCH> ; \ if negative         (SF=1)
+: IFPO ^0F ^8A BRANCH> ; \ if parity odd       (PF=0)
+: IFPE ^0F ^8B BRANCH> ; \ if parity even      (PF=1)
+: IFGE ^0F ^8C BRANCH> ; \ if greater or equal (SF=OF)
+: IFL  ^0F ^8D BRANCH> ; \ if less             (SF<>OF)
+: IFG  ^0F ^8E BRANCH> ; \ if greater          (SF=OF)
+: IFLE ^0F ^8F BRANCH> ; \ if less or equal    (SF<>OF)
 
 [FORTH-DEFINITIONS]
 
 : THEN ( CT: orig -- ) ( RT: *a / *a -- *a )
     \ Resolve a forward branch.
-    >MKTARGET ;
+    >TARGET ;
 : ELSE ( CT: orig1 -- orig2 ) ( RT: *a / *b -- *b / *a )
     \ Swap between branches.
-    ^E9 MKBRANCH> SWAP >MKTARGET ;
+    ^E9 BRANCH> SWAP >TARGET ;
 
 : BEGIN ( CT: -- dest ) ( RT: *a -- ~*a / *a )
     \ Begin a loop.
-    MKTARGET< ;
+    TARGET< ;
 : AGAIN ( CT: dest -- ) ( RT: *~a / *a -- *b )
     \ Loop forever.
     \ Used at end of loop, e.g. BEGIN ... AGAIN
-    ^E9 <MKBRANCH ;
+    ^E9 <BRANCH ;
 : ?UNTIL ( CT: dest -- ) ( RT: *~a x / *a x -- *a x )
     \ Keep going until nonzero. Nondestructive.
     \ Used at end of loop, e.g. BEGIN ... ?UNTIL
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 <MKBRANCH ; \ JZ branch
+    ^0F ^84 <BRANCH ; \ JZ branch
 
 [ASSEMBLER-DEFINITIONS]
 
 \ Like ?UNTIL but using CPU flags instead of testing stack top.
-: UNTILNO ^0F ^80 <MKBRANCH ; \ until no overflow      (OF=0)
-: UNTILO  ^0F ^81 <MKBRANCH ; \ until overflow         (OF=1)
-: UNTILAE ^0F ^82 <MKBRANCH ; \ until above or equal   (CF=0)
-: UNTILB  ^0F ^83 <MKBRANCH ; \ until below            (CF=1)
-: UNTILNZ ^0F ^84 <MKBRANCH ; \ until non-equal        (ZF=1)
-: UNTILZ  ^0F ^85 <MKBRANCH ; \ until zero             (ZF=0)
-: UNTILA  ^0F ^86 <MKBRANCH ; \ until above            (CF=0 and ZF=0)
-: UNTILBE ^0F ^87 <MKBRANCH ; \ until below or equal   (CF=1 or  ZF=1)
-: UNTILNS ^0F ^88 <MKBRANCH ; \ until positive         (SF=0)
-: UNTILS  ^0F ^89 <MKBRANCH ; \ until negative         (SF=1)
-: UNTILPO ^0F ^8A <MKBRANCH ; \ until parity odd       (PF=0)
-: UNTILPE ^0F ^8B <MKBRANCH ; \ until parity even      (PF=1)
-: UNTILGE ^0F ^8C <MKBRANCH ; \ until greater or equal (SF=OF)
-: UNTILL  ^0F ^8D <MKBRANCH ; \ until less             (SF<>OF)
-: UNTILG  ^0F ^8E <MKBRANCH ; \ until greater          (SF=OF)
-: UNTILLE ^0F ^8F <MKBRANCH ; \ until less or equal    (SF<>OF)
+: UNTILNO ^0F ^80 <BRANCH ; \ until no overflow      (OF=0)
+: UNTILO  ^0F ^81 <BRANCH ; \ until overflow         (OF=1)
+: UNTILAE ^0F ^82 <BRANCH ; \ until above or equal   (CF=0)
+: UNTILB  ^0F ^83 <BRANCH ; \ until below            (CF=1)
+: UNTILNZ ^0F ^84 <BRANCH ; \ until non-equal        (ZF=1)
+: UNTILZ  ^0F ^85 <BRANCH ; \ until zero             (ZF=0)
+: UNTILA  ^0F ^86 <BRANCH ; \ until above            (CF=0 and ZF=0)
+: UNTILBE ^0F ^87 <BRANCH ; \ until below or equal   (CF=1 or  ZF=1)
+: UNTILNS ^0F ^88 <BRANCH ; \ until positive         (SF=0)
+: UNTILS  ^0F ^89 <BRANCH ; \ until negative         (SF=1)
+: UNTILPO ^0F ^8A <BRANCH ; \ until parity odd       (PF=0)
+: UNTILPE ^0F ^8B <BRANCH ; \ until parity even      (PF=1)
+: UNTILGE ^0F ^8C <BRANCH ; \ until greater or equal (SF=OF)
+: UNTILL  ^0F ^8D <BRANCH ; \ until less             (SF<>OF)
+: UNTILG  ^0F ^8E <BRANCH ; \ until greater          (SF=OF)
+: UNTILLE ^0F ^8F <BRANCH ; \ until less or equal    (SF<>OF)
 
 [FORTH-DEFINITIONS]
 
@@ -799,35 +794,35 @@
     \ Keep going while value is nonzero. Nondestructive.
     \ Typical usage: begin ... ?while ... repeat
     ^48 ^85 ^DB \ TEST RBX, RBX
-    ^0F ^84 MKBRANCH> ; \ JNZ branch
+    ^0F ^84 BRANCH> ; \ JNZ branch
     SWAP ;
 
 [ASSEMBLER-DEFINITIONS]
 
 \ Like ?WHILE but uses CPU flags instead of testing stack top.
-: WHILENO ^0F ^80 MKBRANCH> SWAP ; \ while no overflow      (OF=0)
-: WHILEO  ^0F ^81 MKBRANCH> SWAP ; \ while overflow         (OF=1)
-: WHILEAE ^0F ^82 MKBRANCH> SWAP ; \ while above or equal   (CF=0)
-: WHILEB  ^0F ^83 MKBRANCH> SWAP ; \ while below            (CF=1)
-: WHILENZ ^0F ^84 MKBRANCH> SWAP ; \ while non-equal        (ZF=1)
-: WHILEZ  ^0F ^85 MKBRANCH> SWAP ; \ while zero             (ZF=0)
-: WHILEA  ^0F ^86 MKBRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
-: WHILEBE ^0F ^87 MKBRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
-: WHILENS ^0F ^88 MKBRANCH> SWAP ; \ while positive         (SF=0)
-: WHILES  ^0F ^89 MKBRANCH> SWAP ; \ while negative         (SF=1)
-: WHILEPO ^0F ^8A MKBRANCH> SWAP ; \ while parity odd       (PF=0)
-: WHILEPE ^0F ^8B MKBRANCH> SWAP ; \ while parity even      (PF=1)
-: WHILEGE ^0F ^8C MKBRANCH> SWAP ; \ while greater or equal (SF=OF)
-: WHILEL  ^0F ^8D MKBRANCH> SWAP ; \ while less             (SF<>OF)
-: WHILEG  ^0F ^8E MKBRANCH> SWAP ; \ while greater          (SF=OF)
-: WHILELE ^0F ^8F MKBRANCH> SWAP ; \ while less or equal    (SF<>OF)
+: WHILENO ^0F ^80 BRANCH> SWAP ; \ while no overflow      (OF=0)
+: WHILEO  ^0F ^81 BRANCH> SWAP ; \ while overflow         (OF=1)
+: WHILEAE ^0F ^82 BRANCH> SWAP ; \ while above or equal   (CF=0)
+: WHILEB  ^0F ^83 BRANCH> SWAP ; \ while below            (CF=1)
+: WHILENZ ^0F ^84 BRANCH> SWAP ; \ while non-equal        (ZF=1)
+: WHILEZ  ^0F ^85 BRANCH> SWAP ; \ while zero             (ZF=0)
+: WHILEA  ^0F ^86 BRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
+: WHILEBE ^0F ^87 BRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
+: WHILENS ^0F ^88 BRANCH> SWAP ; \ while positive         (SF=0)
+: WHILES  ^0F ^89 BRANCH> SWAP ; \ while negative         (SF=1)
+: WHILEPO ^0F ^8A BRANCH> SWAP ; \ while parity odd       (PF=0)
+: WHILEPE ^0F ^8B BRANCH> SWAP ; \ while parity even      (PF=1)
+: WHILEGE ^0F ^8C BRANCH> SWAP ; \ while greater or equal (SF=OF)
+: WHILEL  ^0F ^8D BRANCH> SWAP ; \ while less             (SF<>OF)
+: WHILEG  ^0F ^8E BRANCH> SWAP ; \ while greater          (SF=OF)
+: WHILELE ^0F ^8F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
 
 [FORTH-DEFINITIONS]
 
 : REPEAT ( CT: orig dest -- ) ( RT: *b / *~a / *a -- *b )
     \ End a "begin ... while ..." loop.
     \ This is equivalent to "again then".
-    ^E9 <MKBRANCH >MKTARGET ;
+    ^E9 <BRANCH >TARGET ;
 
 [FORTH-DEFINITIONS]
 
