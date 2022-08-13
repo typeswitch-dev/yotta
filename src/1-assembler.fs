@@ -57,6 +57,7 @@
 
 \ Legacy prefixes
 : LOCK ^F0 ; : REP ^F3 ; : REPE ^F3 ; : REPNE ^F2 ;
+: FS: ^64 ; : GS: ^65 ;
 
 \ Ops that take no arguments.
 
@@ -97,6 +98,13 @@
 : STD     OPB ^FD ; \ Set direction flag
 
 : SYSCALL OPL ^0F ^05 ;
+: RDPMC   OPL ^0F ^33 ;
+
+: PUSHFS  OPL ^0F ^A0 ;
+: POPFS   OPL ^0F ^A1 ;
+: CPUID   OPL ^0F ^A2 ;
+: PUSHGS  OPL ^0F ^A8 ;
+: POPGS   OPL ^0F ^A9 ;
 
 \ Ops that expect both a register and modrm argument.
 \ E.g.  MOVQ< RBX, [RAX]
@@ -130,6 +138,35 @@
 : MOVL> OPL ^89 ; : MOVL< OPL ^8B ;
 : MOVQ> OPQ ^89 ; : MOVQ< OPQ ^8B ;
 
+: LEAW< OPW ^8D ;
+: LEAL< OPL ^8D ;
+: LEAQ< OPQ ^8D ;
+
+:   BTW> OPW ^0F ^A3 ; :   BTL> OPL ^0F ^A3 ; :   BTQ> OPQ ^0F ^A3 ;
+: SHLDW> OPW ^0F ^A5 ; : SHLDL> OPL ^0F ^A5 ; : SHLDQ> OPQ ^0F ^A5 ;
+:  BTSW> OPW ^0F ^AB ; :  BTSL> OPL ^0F ^AB ; :  BTSQ> OPQ ^0F ^AB ;
+: SHRDW> OPW ^0F ^AD ; : SHRDL> OPL ^0F ^AD ; : SHRDQ> OPQ ^0F ^AD ;
+: IMULW< OPW ^0F ^AF ; : IMULL< OPL ^0F ^AF ; : IMULQ< OPQ ^0F ^AF ;
+
+: CMPXCHGB> OPB ^0F ^B0 ;
+: CMPXCHGW> OPW ^0F ^B1 ;
+: CMPXCHGL> OPL ^0F ^B1 ;
+: CMPXCHGQ> OPQ ^0F ^B1 ;
+
+:  BTRW> OPW ^0F ^B3 ; :  BTRL> OPL ^0F ^B3 ; :  BTRQ> OPQ ^0F ^B3 ;
+:  BTCW> OPW ^0F ^BB ; :  BTCL> OPL ^0F ^BB ; :  BTCQ> OPQ ^0F ^BB ;
+
+: POPCNTW< ^F3 OPW ^0F ^B8 ;
+: POPCNTL< ^F3 OPL ^0F ^B8 ;
+: POPCNTQ< ^F3 OPQ ^0F ^B8 ;
+
+: BSFW< OPW ^0F ^BC ; : BSFL< OPL ^0F ^BC ; : BSFQ< OPQ ^0F ^BC ;
+: BSRW< OPW ^0F ^BD ; : BSRL< OPL ^0F ^BD ; : BSRQ< OPQ ^0F ^BD ;
+
+: TZCNTW< ^F3 OPW ^0F ^BC ; : LZCNTW< ^F3 OPW ^0F ^BD ;
+: TZCNTL< ^F3 OPL ^0F ^BC ; : LZCNTL< ^F3 OPL ^0F ^BD ;
+: TZCNTQ< ^F3 OPQ ^0F ^BC ; : LZCNTQ< ^F3 OPQ ^0F ^BD ;
+
 : MOVZXWB< OPW ^0F ^B6 ; : MOVSXWB< OPW ^0F ^BE ;
 : MOVZXLB< OPL ^0F ^B6 ; : MOVSXLB< OPL ^0F ^BE ;
 : MOVZXQB< OPQ ^0F ^B6 ; : MOVSXQB< OPQ ^0F ^BE ;
@@ -137,13 +174,20 @@
 : MOVZXQW< OPQ ^0F ^B7 ; : MOVSXQW< OPQ ^0F ^BF ;
 ( -------------------- ) : MOVSXQL< OPQ ^63     ;
 
-: LEAW< OPW ^8D ;
-: LEAL< OPL ^8D ;
-: LEAQ< OPQ ^8D ;
+\ these need a memory operand
+: MOVBEW< OPW ^0F ^38 ^F0 ; : MOVBEW> OPW ^0F ^38 ^F1 ;
+: MOVBEL< OPL ^0F ^38 ^F0 ; : MOVBEL> OPL ^0F ^38 ^F1 ;
+: MOVBEQ< OPQ ^0F ^39 ^F0 ; : MOVBEQ> OPQ ^0F ^39 ^F1 ;
 
-: IMULW< OPW ^0F ^AF ;
-: IMULL< OPL ^0F ^AF ;
-: IMULQ< OPQ ^0F ^AF ;
+: CRC32B< ^F2 OPB ^0F ^38 ^F0 ;
+: CRC32W< ^F2 OPW ^0F ^38 ^F1 ;
+: CRC32L< ^F2 OPL ^0F ^38 ^F1 ;
+: CRC32Q< ^F2 OPQ ^0F ^38 ^F1 ;
+
+: ADCXL< ^66 OPL ^0F ^38 ^F6 ;
+: ADCXQ< ^66 OPQ ^0F ^38 ^F6 ;
+: ADOXL< ^F3 OPL ^0F ^38 ^F6 ;
+: ADOXQ< ^F3 OPQ ^0F ^38 ^F6 ;
 
 \ Ops that expect register, modrm, and immediate arguments.
 \ (Do not write a comma after the modrm argument!)
@@ -151,6 +195,9 @@
 : IMULW<. OPW ^6B ; : IMULW<.. OPW ^69 ;
 : IMULL<. OPL ^6B ; : IMULL<:  OPL ^69 ;
 : IMULQ<. OPQ ^6B ; : IMULQ<:  OPQ ^69 ;
+
+: SHLDW>. OPW ^0F ^A4 ; : SHLDL>. OPL ^0F ^A4 ; : SHLDQ>. OPQ ^0F ^A4 ;
+: SHRDW>. OPW ^0F ^AC ; : SHRDL>. OPL ^0F ^AC ; : SHRDQ>. OPQ ^0F ^AC ;
 
 \ Ops that expect an immediate.
 : ADD-AL.  OPB ^04 ; : ADC-AL.  OPB ^14 ;
@@ -222,6 +269,18 @@
 : XCHGL-EAX# OPL ^90 ;
 : XCHGQ-RAX# OPQ ^90 ;
 
+: BSWAPL# OPL ^0F ^C8 ;
+: BSWAPQ# OPQ ^0F ^C8 ;
+
+: RDFSBASEL# ^F3 OPL ^0F ^AE /0 ;
+: RDFSBASEQ# ^F3 OPQ ^0F ^AE /0 ;
+: RDGSBASEL# ^F3 OPL ^0F ^AE /1 ;
+: RDGSBASEQ# ^F3 OPQ ^0F ^AE /1 ;
+: WRFSBASEL# ^F3 OPL ^0F ^AE /2 ;
+: WRFSBASEQ# ^F3 OPQ ^0F ^AE /2 ;
+: WRGSBASEL# ^F3 OPL ^0F ^AE /3 ;
+: WRGSBASEQ# ^F3 OPQ ^0F ^AE /3 ;
+
 \ Ops that expect a direct register argument and an immediate.
 \ (Do not write a comma after the direct register argument!)
 \ E.g.  MOVL#: RAX $10203040  ( MOV EAX, 10203040h )
@@ -242,15 +301,6 @@
 : SHLW_CL OPW ^D3 /4 ; : SHRW_CL OPW ^D3 /5 ; : SARW_CL OPW ^D3 /7 ;
 : SHLL_CL OPL ^D3 /4 ; : SHRL_CL OPL ^D3 /5 ; : SARL_CL OPL ^D3 /7 ;
 : SHLQ_CL OPQ ^D3 /4 ; : SHRQ_CL OPQ ^D3 /5 ; : SARQ_CL OPQ ^D3 /7 ;
-
-: SETO_  OPB ^0F ^90 /0 ; : SETNO_ OPB ^0F ^91 /0 ;
-: SETB_  OPB ^0F ^92 /0 ; : SETAE_ OPB ^0F ^93 /0 ;
-: SETZ_  OPB ^0F ^94 /0 ; : SETNZ_ OPB ^0F ^95 /0 ;
-: SETBE_ OPB ^0F ^96 /0 ; : SETA_  OPB ^0F ^97 /0 ;
-: SETS_  OPB ^0F ^98 /0 ; : SETNS_ OPB ^0F ^99 /0 ;
-: SETPE_ OPB ^0F ^9A /0 ; : SETPO_ OPB ^0F ^9B /0 ;
-: SETL_  OPB ^0F ^9C /0 ; : SETGE_ OPB ^0F ^9D /0 ;
-: SETLE_ OPB ^0F ^9E /0 ; : SETG_  OPB ^0F ^9F /0 ;
 
 :  POPW_ OPW ^8F /0 ;
 : PUSHW_ OPW ^FF /6 ;
@@ -277,6 +327,18 @@
 
 : CALLQ_ OPL ^FF /2 ; \ forced to 64 bits
 : JUMPQ_ OPL ^FF /4 ; \ forced to 64 bits
+
+: SETO_  OPB ^0F ^90 /0 ; : SETNO_ OPB ^0F ^91 /0 ;
+: SETB_  OPB ^0F ^92 /0 ; : SETAE_ OPB ^0F ^93 /0 ;
+: SETZ_  OPB ^0F ^94 /0 ; : SETNZ_ OPB ^0F ^95 /0 ;
+: SETBE_ OPB ^0F ^96 /0 ; : SETA_  OPB ^0F ^97 /0 ;
+: SETS_  OPB ^0F ^98 /0 ; : SETNS_ OPB ^0F ^99 /0 ;
+: SETPE_ OPB ^0F ^9A /0 ; : SETPO_ OPB ^0F ^9B /0 ;
+: SETL_  OPB ^0F ^9C /0 ; : SETGE_ OPB ^0F ^9D /0 ;
+: SETLE_ OPB ^0F ^9E /0 ; : SETG_  OPB ^0F ^9F /0 ;
+
+: CMPXCHG8B_  OPL ^0F ^C7 /1 ; \ must take memory operand
+: CMPXCHG16B_ OPQ ^0F ^C7 /1 ; \ must take memory operand
 
 \ Ops that expect a modrm argument and an immediate.
 
@@ -326,6 +388,11 @@
 : TESTW_.. OPW ^F7 /0 ;
 : TESTL_:  OPL ^F7 /0 ;
 : TESTQ_:  OPQ ^F7 /0 ; \ 32-bit immediate sign-extended to 64-bits
+
+:  BTW_. OPW ^0F ^BA /4 ; :  BTL_. OPL ^0F ^BA /4 ; :  BTQ_. OPQ ^0F ^BA /4 ;
+: BTSW_. OPW ^0F ^BA /5 ; : BTSL_. OPL ^0F ^BA /5 ; : BTSQ_. OPQ ^0F ^BA /5 ;
+: BTRW_. OPW ^0F ^BA /6 ; : BTRL_. OPL ^0F ^BA /6 ; : BTRQ_. OPQ ^0F ^BA /6 ;
+: BTCW_. OPW ^0F ^BA /7 ; : BTCL_. OPL ^0F ^BA /7 ; : BTCQ_. OPQ ^0F ^BA /7 ;
 
 \ Encoding the ModR/M byte starting with the REG field.
 \ We set MOD=3 by default, so we can reuse plain register names
