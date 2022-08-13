@@ -347,7 +347,10 @@ CARET:  push rax
 .emsg2  db 10
 .emsg2n equ $ - .emsg2
 
-KERNEL: incbin "src/yotta.fs"
+KERNEL: incbin "src/0-preamble.fs"
+        incbin "src/1-assembler.fs"
+        incbin "src/2-forth.fs"
+        incbin "src/3-main.fs"
         db 0, -1, 0, -1, 0, -1, 0, -1
 
 section .bss
