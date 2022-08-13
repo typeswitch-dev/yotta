@@ -59,18 +59,43 @@
 : LOCK ^F0 ; : REP ^F3 ; : REPE ^F3 ; : REPNE ^F2 ;
 
 \ Ops that take no arguments.
+
+: NOP OPL ^90 ; : PAUSE ^F3 OPL ^90 ;
+: CBW OPW ^98 ; : CWDE OPL ^98 ; : CDQE OPQ ^98 ;
+: CWD OPW ^99 ; : CDQ OPL ^99 ; : CQO OPQ ^99 ;
+: FWAIT OPB ^9B ;
+: PUSHFW OPW ^9C ; : PUSHFQ OPL ^9C ;
+: POPFW OPW ^9D ; : POPFQ OPL ^9D ;
+
+:  INSB OPB ^6C ; :  INSW OPW ^A5 ; :  INSD OPL ^A5 ;
+: OUTSB OPB ^6E ; : OUTSW OPW ^A5 ; : OUTSD OPL ^A5 ; : MOVSQ OPQ ^A5 ;
 : MOVSB OPB ^A4 ; : MOVSW OPW ^A5 ; : MOVSL OPL ^A5 ; : MOVSQ OPQ ^A5 ;
 : CMPSB OPB ^A6 ; : CMPSW OPW ^A7 ; : CMPSL OPL ^A7 ; : CMPSQ OPQ ^A7 ;
 : STOSB OPB ^AA ; : STOSW OPW ^AB ; : STOSL OPL ^AB ; : STOSQ OPQ ^AB ;
 : LODSB OPB ^AC ; : LODSW OPW ^AD ; : LODSL OPL ^AD ; : LODSQ OPQ ^AD ;
 : SCASB OPB ^AE ; : SCASW OPW ^AF ; : SCASL OPL ^AF ; : LODSQ OPQ ^AF ;
-: IMULB OPB ^F6 ; : IMULW OPW ^F7 ; : IMULL OPL ^F7 ; : IMULQ OPQ ^F7 ;
 
-: CWD OPW ^99 ;
-: CDQ OPL ^99 ;
-: CQO OPQ ^99 ;
+: RET   OPL ^C3 ;
+: LEAVE OPL ^C9 ;
+: FRET  OPL ^CB ;
+: INT3  OPB ^CC ;
+: IRETW OPW ^CF ; : IRETL OPL ^CF ; : IRETQ OPQ ^CF ;
 
-: RET     OPL ^C3 ;
+: XLATB   OPB ^D7 ;
+
+:  INB-DX OPB ^EC ; :  INW-DX OPW ^ED ; :  INL-DX OPL ^ED ;
+: OUTB-DX OPB ^EE ; : OUTW-DX OPW ^EF ; : OUTL-DX OPL ^EF ;
+
+: INT1    OPB ^F1 ;
+: HLT     OPB ^F4 ;
+: CMC     OPB ^F5 ; \ Complement carry flag.
+: CLC     OPB ^F8 ; \ Clear carry flag
+: STC     OPB ^F9 ; \ Set carry flag
+: CLI     OPB ^FA ; \ Clear interrupt flag
+: STI     OPB ^FB ; \ Set interrput flag
+: CLD     OPB ^FC ; \ Clear direction flag
+: STD     OPB ^FD ; \ Set direction flag
+
 : SYSCALL OPL ^0F ^05 ;
 
 \ Ops that expect both a register and modrm argument.
@@ -95,10 +120,10 @@
 : ORL< OPL ^0B ; : SBBL< OPL ^1B ; : SUBL< OPL ^2B ; : CMPL< OPL ^3B ;
 : ORQ< OPQ ^0B ; : SBBQ< OPQ ^1B ; : SUBQ< OPQ ^2B ; : CMPQ< OPQ ^3B ;
 
-: TESTB> OPB ^84 ;
-: TESTW> OPW ^85 ;
-: TESTL> OPL ^85 ;
-: TESTQ> OPQ ^85 ;
+: TESTB> OPB ^84 ; : XCHGB> OPB ^84 ;
+: TESTW> OPW ^85 ; : XCHGW> OPW ^85 ;
+: TESTL> OPL ^85 ; : XCHGL> OPL ^85 ;
+: TESTQ> OPQ ^85 ; : XCHGQ> OPQ ^85 ;
 
 : MOVB> OPB ^88 ; : MOVB< OPB ^8A ;
 : MOVW> OPW ^89 ; : MOVW< OPW ^8B ;
@@ -152,6 +177,22 @@
 : PUSHQ.  OPL ^6A ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 : PUSHQ:  OPL ^68 ; \ Pushes 64-bits even without REX.W prefix. TODO verify
 
+: MOV-AL-@::  OPB ^A0 ; : MOV-AL-!::  OPB ^A2 ;
+: MOV-AX-@::  OPW ^A1 ; : MOV-AX-!::  OPW ^A3 ;
+: MOV-EAX-@:: OPL ^A1 ; : MOV-EAX-!:: OPL ^A3 ;
+: MOV-RAX-@:: OPQ ^A1 ; : MOV-RAX-!:: OPQ ^A3 ;
+
+: TEST-AL.  OPB ^A8 ; : TEST-AX.. OPW ^A9 ;
+: TEST-EAX: OPL ^A9 ; : TEST-RAX: OPQ ^A9 ;
+
+: RET..    OPL ^C2 ; \ RET while popping extra bytes
+: ENTER... OPL ^C8 ;
+: FRET..   OPL ^CA ;
+: INT.     OPB ^CD ;
+
+:  INB. OPB ^E4 ; :  INW. OPW ^E5 ; :  INL. OPL ^E5 ;
+: OUTB. OPB ^E6 ; : OUTW. OPW ^E7 ; : OUTL. OPL ^E7 ;
+
 \ Short jumps. These expect an immediate signed byte offset.
 : JO.  ^70 ; : JNO. ^71 ; : JB.  ^72 ; : JAE. ^73 ;
 : JZ.  ^74 ; : JNZ. ^75 ; : JBE. ^76 ; : JA.  ^77 ;
@@ -177,6 +218,10 @@
 : PUSHQ# OPL ^50 ; \ forced to 64 bits
 : POPQ#  OPL ^58 ; \ forced to 64 bits
 
+: XCHGW-AX# OPW ^90 ;
+: XCHGL-EAX# OPL ^90 ;
+: XCHGQ-RAX# OPQ ^90 ;
+
 \ Ops that expect a direct register argument and an immediate.
 \ (Do not write a comma after the direct register argument!)
 \ E.g.  MOVL#: RAX $10203040  ( MOV EAX, 10203040h )
@@ -187,6 +232,16 @@
 : MOVQ#:: OPQ ^B8 ;
 
 \ Ops that expect a modrm argument only.
+
+: SHLB_1 OPB ^D0 /4 ; : SHRB_1 OPB ^D0 /5 ; : SARB_1 OPB ^D0 /7 ;
+: SHLW_1 OPW ^D1 /4 ; : SHRW_1 OPW ^D1 /5 ; : SARW_1 OPW ^D1 /7 ;
+: SHLL_1 OPL ^D1 /4 ; : SHRL_1 OPL ^D1 /5 ; : SARL_1 OPL ^D1 /7 ;
+: SHLQ_1 OPQ ^D1 /4 ; : SHRQ_1 OPQ ^D1 /5 ; : SARQ_1 OPQ ^D1 /7 ;
+
+: SHLB_CL OPB ^D2 /4 ; : SHRB_CL OPB ^D2 /5 ; : SARB_CL OPB ^D2 /7 ;
+: SHLW_CL OPW ^D3 /4 ; : SHRW_CL OPW ^D3 /5 ; : SARW_CL OPW ^D3 /7 ;
+: SHLL_CL OPL ^D3 /4 ; : SHRL_CL OPL ^D3 /5 ; : SARL_CL OPL ^D3 /7 ;
+: SHLQ_CL OPQ ^D3 /4 ; : SHRQ_CL OPQ ^D3 /5 ; : SARQ_CL OPQ ^D3 /7 ;
 
 : SETO_  OPB ^0F ^90 /0 ; : SETNO_ OPB ^0F ^91 /0 ;
 : SETB_  OPB ^0F ^92 /0 ; : SETAE_ OPB ^0F ^93 /0 ;
@@ -224,6 +279,38 @@
 : JUMPQ_ OPL ^FF /4 ; \ forced to 64 bits
 
 \ Ops that expect a modrm argument and an immediate.
+
+: ADDB_.  OPB ^80 /0 ; :  ORB_.  OPB ^80 /1 ;
+: ADDW_.  OPW ^83 /0 ; :  ORW_.  OPW ^83 /1 ;
+: ADDL_.  OPL ^83 /0 ; :  ORL_.  OPL ^83 /1 ;
+: ADDQ_.  OPQ ^83 /0 ; :  ORQ_.  OPQ ^83 /1 ;
+: ADDW_.. OPW ^81 /0 ; :  ORW_.. OPW ^81 /1 ;
+: ADDL_:  OPL ^81 /0 ; :  ORL_:  OPL ^81 /1 ;
+: ADDQ_:  OPQ ^81 /0 ; :  ORQ_:  OPQ ^81 /1 ;
+
+: ADCB_.  OPB ^80 /2 ; : SBBB_.  OPB ^80 /3 ;
+: ADCW_.  OPW ^83 /2 ; : SBBW_.  OPW ^83 /3 ;
+: ADCL_.  OPL ^83 /2 ; : SBBL_.  OPL ^83 /3 ;
+: ADCQ_.  OPQ ^83 /2 ; : SBBQ_.  OPQ ^83 /3 ;
+: ADCW_.. OPW ^81 /2 ; : SBBW_.. OPW ^81 /3 ;
+: ADCL_:  OPL ^81 /2 ; : SBBL_:  OPL ^81 /3 ;
+: ADCQ_:  OPQ ^81 /2 ; : SBBQ_:  OPQ ^81 /3 ;
+
+: ANDB_.  OPB ^80 /4 ; : SUBB_.  OPB ^80 /5 ;
+: ANDW_.  OPW ^83 /4 ; : SUBW_.  OPW ^83 /5 ;
+: ANDL_.  OPL ^83 /4 ; : SUBL_.  OPL ^83 /5 ;
+: ANDQ_.  OPQ ^83 /4 ; : SUBQ_.  OPQ ^83 /5 ;
+: ANDW_.. OPW ^81 /4 ; : SUBW_.. OPW ^81 /5 ;
+: ANDL_:  OPL ^81 /4 ; : SUBL_:  OPL ^81 /5 ;
+: ANDQ_:  OPQ ^81 /4 ; : SUBQ_:  OPQ ^81 /5 ;
+
+: XORB_.  OPB ^80 /6 ; : CMPB_.  OPB ^80 /7 ;
+: XORW_.  OPW ^83 /6 ; : CMPW_.  OPW ^83 /7 ;
+: XORL_.  OPL ^83 /6 ; : CMPL_.  OPL ^83 /7 ;
+: XORQ_.  OPQ ^83 /6 ; : CMPQ_.  OPQ ^83 /7 ;
+: XORW_.. OPW ^81 /6 ; : CMPW_.. OPW ^81 /7 ;
+: XORL_:  OPL ^81 /6 ; : CMPL_:  OPL ^81 /7 ;
+: XORQ_:  OPQ ^81 /6 ; : CMPQ_:  OPQ ^81 /7 ;
 
 : SHLB_. OPB ^C0 /4 ; : SHRB_. OPB ^C0 /5 ; : SARB_. OPB ^C0 /7 ;
 : SHLW_. OPW ^C1 /4 ; : SHRW_. OPW ^C1 /5 ; : SARW_. OPW ^C1 /7 ;
