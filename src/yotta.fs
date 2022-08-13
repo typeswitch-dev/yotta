@@ -1,12 +1,7 @@
 : ; ^C3 ;
-: SKIP-UNTIL.
-    ^8A ^15 ^00000007
-    ^AC
-    ^3A ^C2
-    ^75 ^FB
-    ^EB ^01 ;
-: \ SKIP-UNTIL. $0A ;
-: ( SKIP-UNTIL. $29 ;
+: SKIP-UNTIL ^AC ^3A ^C2 ^75 ^FB ;
+: \ $B2 $0A SKIP-UNTIL ;
+: ( $B2 $29 SKIP-UNTIL ;
 
 \ Welcome to yotta! Yotta is a minimalistic forth-like language
 \ that has three primitives:
@@ -53,7 +48,9 @@
 : $USER.FORW ^00000058 ; \ Forth wordlist.
 : $USER.MIRW ^00000060 ; \ Mirth wordlist.
 : $USER.DICT ^00000068 ; \ Dictionary pointer.
-: $USER.FIND ^00000070 ;
+: $USER.WORD ^00000070 ; \ "WORD" primitive
+: $USER.FIND ^00000078 ; \ "FIND" primitive
+: $USER.SORD ^00000080 ;
 
 \ Dict field offsets. Keep in sync with "struc DICT" in the ASM source.
 \ The dictionary is a linked list of definitions.
@@ -62,84 +59,112 @@
 : $DICT.CODE ^28 ; \ Pointer to code that will get executed when word is read.
 : $DICT.DATA ^30 ; \ Extra data associated with the word.
 
-: [KERNEL-DEFINITIONS]
-    \ Change current dictionary to KERNEL.
-    $48 $8D $85 $USER.KERW \ LEA RAX, [RBP+USER.KERW]
-    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
-    ;
+: CALL> ( -- )
+    \ Exit the current word, and compile a call to the rest
+    \ of the word. The typical usage is at the start of a word
+    \ definition, to turn the whole definition into a word that
+    \ simply compiles a call to itself. For example,
+    \
+    \   : SQUARE CALL> DUP * ;
+    \
+    \ will make it so that when SQUARE is interpreted, it will
+    \ compile a call into its body (the DUP * part). Thus CALL>
+    \ is like the default compilation action of most forths.
+    \ Using CALL> in the assembler saves us about 3KB so it's
+    \ worth it to define this directly in machine code before
+    \ we have the assembler up and running.
 
-: [MIRTH-DEFINITIONS]
-    \ Change current dictionary to MIRTH.
-    $48 $8D $85 $USER.MIRW \ LEA RAX, [RBP+USER.MIRW]
-    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
-    ;
-
-: [FORTH-DEFINITIONS]
-    \ Change current dictionary to FORTH.
-    $48 $8D $85 $USER.FORW \ LEA RAX, [RBP+USER.FORW]
-    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
-    ;
-
-: [ASSEMBLER-DEFINITIONS]
-    \ Change current dictionary to ASSEMBLER.
-    $48 $8D $85 $USER.ASMW \ LEA RAX, [RBP+USER.ASMW]
-    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
-    ;
-
-: [MINIMAL-DEFINITIONS]
-    \ Change current dictionary to ASSEMBLER.
-    $48 $8D $85 $USER.MINW \ LEA RAX, [RBP+USER.MINW]
-    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
-    ;
-
-: PREPARE-REX
-    \ "Header" of PREPARE-REX, which compiles a call to the body.
-    \ This is what gets executed when PREPARE-REX is interpreted.
-    \ Note that this is the same as the header of CALL> ... it's
-    \ just in machine code because we can't implement CALL> yet.
     ^E8                     \ emit E8 byte ( E8 xx xx xx xx = CALL NEAR )
     $48 $8D $05 $00000001   \ LEA RAX, [RIP+1]
     $48 $2B $C7             \ SUB RAX, RDI
     $AB                     \ STOSL
     $C3                     \ RET
 
-    \ "Body" of PREPARE-REX. This gets executed when the
-    \ word that called PREPARE-REX is run, so the instructions
-    \ below are emitted alongside any other instructions emitted
-    \ by PREPARE-REX's caller. I.e. so we know that REX is prepared
-    \ before any instruction that follows.
-    ^4D ^85 ^C0        \ TEST R8, R8
-    ^75 ^16            \ JNZ +22
-    ^4D ^8B ^01        \ MOVQ< R8, [R9]
-    ^4D ^89 ^41 ^01    \ MOVQ> R8, [R9]. $01
-    ^4D ^8B ^C1        \ MOVQ< R8, R9
-    ^41 ^C6 ^00 ^40    \ MOVB_. [R8] 0x40
-    ^4D ^8D ^49 ^01    \ LEAQ< R9, [R9]. $01
-    ^48 ^8D ^7F ^01    \ LEAQ< RDI, [RDI]. $01
+    ^E8                     \ emit E8 byte
+    $58                     \ POP RAX
+    $48 $8D $40 $FC         \ LEA RAX, [RAX-4]
+    $48 $2B $C7             \ SUB RAX, RDI
+    $AB                     \ STOSL
     ;
 
-: +W PREPARE-REX ^41 ^80 ^08 ^08 ; \ ORB_. [R8] 0x08
-: +R PREPARE-REX ^41 ^80 ^08 ^04 ; \ ORB_. [R8] 0x04
-: +X PREPARE-REX ^41 ^80 ^08 ^02 ; \ ORB_. [R8] 0x02
-: +B PREPARE-REX ^41 ^80 ^08 ^01 ; \ ORB_. [R8] 0x01
+: JUMP> ( -- ) CALL>
+    \ Like CALL> but creates a JUMP instruction instead.
+    \ This is used for building tail-recursive loops.
+    \ (It's a lot nicer than using CALL> RDROP.)
+    ^E9                     \ emit E9 byte
+    $58                     \ POP RAX
+    $48 $8D $40 $FC         \ LEA RAX, [RAX-4]
+    $48 $2B $C7             \ SUB RAX, RDI
+    $AB                     \ STOSL
+    ;
 
-: OPB ^4D ^33 ^C0   \ XOR R8, R8
-      ^49 ^89 ^F9 ; \ MOV R9, RDI
+: SET-CURRENT CALL>
+    \ Change current dictionary based on offset to RBP.
+    $48 $03 $C5            \ ADD RAX, RBP
+    $48 $89 $85 $USER.DICT \ MOV [RBP+USER.DICT], RAX
+    ;
 
-: OPW ^B0 ^66 ^AA   \ MOV AL, 0x66; STOSB
-      ^4D ^33 ^C0   \ XOR R8, R8
-      ^49 ^89 ^F9 ; \ MOV R9, RDI
+: [KERNEL-DEFINITIONS] ( -- )
+    \ Change current dictionary to KERNEL.
+    $B8 $USER.KERW SET-CURRENT ;
 
-: OPL ^4D ^33 ^C0   \ XOR R8, R8
-      ^49 ^89 ^F9 ; \ MOV R9, RDI
+: [MIRTH-DEFINITIONS] ( -- )
+    \ Change current dictionary to MIRTH.
+    $B8 $USER.MIRW SET-CURRENT ;
 
-: OPL' ^49 ^89 ^F8   \ MOV R8, RDI
-       ^B0 ^48 ^AA   \ MOV AL, 0x40; STOSB
-       ^49 ^89 ^F9 ; \ MOV R9, RDI
+: [FORTH-DEFINITIONS] ( -- )
+    \ Change current dictionary to FORTH.
+    $B8 $USER.FORW SET-CURRENT ;
 
-: OPQ ^49 ^89 ^F8   \ MOV R8, RDI
-      ^B0 ^48 ^AA   \ MOV AL, 0x48; STOSB
-      ^49 ^89 ^F9 ; \ MOV R9, RDI
+: [ASSEMBLER-DEFINITIONS] ( -- )
+    \ Change current dictionary to ASSEMBLER.
+    $B8 $USER.ASMW SET-CURRENT ;
+
+: [MINIMAL-DEFINITIONS] ( -- )
+    \ Change current dictionary to MINIMAL.
+    $B8 $USER.MINW SET-CURRENT ;
+
+: PREPARE-REX CALL>
+    \ Make sure REX prefix exists, insert it if necessary.
+    \ Note that R9 points to the current opcode (after
+    \ legacy prefixes and REX prefix if it exists) and
+    \ R8 points to the REX prefix. R8 is NULL if the
+    \ current instruction doesn't have a REX prefix yet.
+    \ So what PREPARE-REX tries to do is create a blank
+    \ REX prefix if it's missing, and add R8.
+    \
+    $4D $85 $C0        \ TEST R8, R8
+    $75 $16            \ JNZ +22
+    $4D $8B $01        \ MOVQ< R8, [R9]
+    $4D $89 $41 $01    \ MOVQ> R8, [R9]. $01
+    $4D $8B $C1        \ MOVQ< R8, R9
+    $41 $C6 $00 $40    \ MOVB_. [R8] 0x40
+    $4D $8D $49 $01    \ LEAQ< R9, [R9]. $01
+    $48 $8D $7F $01    \ LEAQ< RDI, [RDI]. $01
+    ;
+
+: +W CALL> PREPARE-REX $41 $80 $08 $08 ; \ ORB_. [R8] 0x08
+: +R CALL> PREPARE-REX $41 $80 $08 $04 ; \ ORB_. [R8] 0x04
+: +X CALL> PREPARE-REX $41 $80 $08 $02 ; \ ORB_. [R8] 0x02
+: +B CALL> PREPARE-REX $41 $80 $08 $01 ; \ ORB_. [R8] 0x01
+
+: OPB CALL>
+    $4D $33 $C0   \ XOR R8, R8
+    $49 $89 $F9 ; \ MOV R9, RDI
+
+: OPW CALL>
+    $B0 $66 $AA   \ MOV AL, 0x66; STOSB
+    $4D $33 $C0   \ XOR R8, R8
+    $49 $89 $F9 ; \ MOV R9, RDI
+
+: OPL CALL>
+    $4D $33 $C0   \ XOR R8, R8
+    $49 $89 $F9 ; \ MOV R9, RDI
+
+: OPQ CALL>
+    $49 $89 $F8   \ MOV R8, RDI
+    $B0 $48 $AA   \ MOV AL, 0x48; STOSB
+    $49 $89 $F9 ; \ MOV R9, RDI
 
 \ Opcode extensions. These are modrm bytes with the REG field
 \ prefilled, and the MOD field set to 3 (which is the default
@@ -166,7 +191,9 @@
 : SCASB OPB ^AE ; : SCASW OPW ^AF ; : SCASL OPL ^AF ; : LODSQ OPQ ^AF ;
 : IMULB OPB ^F6 ; : IMULW OPW ^F7 ; : IMULL OPL ^F7 ; : IMULQ OPQ ^F7 ;
 
-: CWD OPW ^99 ; : CDQ OPL ^99 ; : CQO OPQ ^99 ;
+: CWD OPW ^99 ;
+: CDQ OPL ^99 ;
+: CQO OPQ ^99 ;
 
 : RET     OPL ^C3 ;
 : SYSCALL OPL ^0F ^05 ;
@@ -270,8 +297,10 @@
 \ (Do not write a comma after the direct register argument!)
 \ E.g. PUSHQ# RAX
 \      POPQ# R15
-: PUSHW# OPW ^50 ; : PUSHQ# OPL ^50 ; \ forced to 64 bits
-: POPW#  OPW ^58 ; : POPQ#  OPL ^58 ; \ forced to 64 bits
+: PUSHW# OPW ^50 ;
+: POPW#  OPW ^58 ;
+: PUSHQ# OPL ^50 ; \ forced to 64 bits
+: POPQ#  OPL ^58 ; \ forced to 64 bits
 
 \ Ops that expect a direct register argument and an immediate.
 \ (Do not write a comma after the direct register argument!)
@@ -293,8 +322,10 @@
 : SETL_  OPB ^0F ^9C /0 ; : SETGE_ OPB ^0F ^9D /0 ;
 : SETLE_ OPB ^0F ^9E /0 ; : SETG_  OPB ^0F ^9F /0 ;
 
-:  POPW_ OPW ^8F /0 ; :  POPQ_ OPL ^8F /0 ; \ forced to 64 bits
-: PUSHW_ OPW ^FF /6 ; : PUSHQ_ OPL ^FF /6 ; \ forced to 64 bits
+:  POPW_ OPW ^8F /0 ;
+: PUSHW_ OPW ^FF /6 ;
+:  POPQ_ OPL ^8F /0 ; \ forced to 64 bits
+: PUSHQ_ OPL ^FF /6 ; \ forced to 64 bits
 
 : NOTB_ OPB ^F6 /2 ; : NEGB_  OPB ^F6 /3 ;
 : NOTW_ OPW ^F7 /2 ; : NEGW_  OPW ^F7 /3 ;
@@ -327,7 +358,6 @@
 : MOVB_.  OPB ^C6 /0 ;
 : MOVW_.. OPW ^C7 /0 ;
 : MOVL_:  OPL ^C7 /0 ;
-: MOVL_:'  OPL' ^C7 /0 ;
 : MOVQ_:  OPQ ^C7 /0 ; \ 32-bit immediate sign-extended to 64-bits
 
 : TESTB_.  OPB ^F6 /0 ;
@@ -435,30 +465,6 @@
 
 [KERNEL-DEFINITIONS]
 
-: CALL> ( -- )
-    \ Exit the current word, and compile a call to the rest
-    \ of the word. The typical usage is at the start of a word
-    \ definition, to turn the whole definition into a word that
-    \ simply compiles a call to itself. For example,
-    \
-    \   : SQUARE CALL> DUP * ;
-    \
-    \ will make it so that when SQUARE is interpreted, it will
-    \ compile a call into its body (the DUP * part). Thus CALL>
-    \ is like the default compilation action of most forths.
-
-    ^E8
-    LEAQ< RAX, [RIP]: $00000001
-    SUBQ< RAX, RDI
-    STOSL
-    RET
-
-    ^E8
-    POPQ# RAX
-    LEAQ< RAX, [RAX]. $FC
-    SUBQ< RAX, RDI
-    STOSL ;
-
 : ;
     \ Store the end address of the word in
     \ its dictionary entry, and emit RET.
@@ -491,6 +497,18 @@
     REP MOVSB
     MOVQ< RSI, RDX
     ;
+
+: KWORD ( "<spaces>name" -- ) CALL>
+    \ Parse word and fill name buffer.
+    \ Relies on the engine's WORD primitive.
+    CALLQ_ [RBP]: $USER.WORD ;
+
+: KFIND ( -- RAX=dict|0 ) CALL>
+    \ Search for word in name buffer, among
+    \ all the wordlists in the search order.
+    \ Returns the first matching dictionary entry in RAX,
+    \ if found, else returns 0 in RAX.
+    CALLQ_ [RBP]: $USER.FIND ;
 
 : [SETUP]
     \ Set up data stack (R15).
@@ -619,71 +637,71 @@
     POPQ# RDI
     DROP ;
 
-: 'NUL' INLINE/CALL>     0  ; : 'BL'  INLINE/CALL> U. $20 ;
-: 'SOH' INLINE/CALL> U. $01 ; : '!'   INLINE/CALL> U. $21 ;
-: 'STX' INLINE/CALL> U. $02 ; : '"'   INLINE/CALL> U. $22 ;
-: 'ETX' INLINE/CALL> U. $03 ; : '#'   INLINE/CALL> U. $23 ;
-: 'SOT' INLINE/CALL> U. $04 ; : '$'   INLINE/CALL> U. $24 ;
-: 'ENQ' INLINE/CALL> U. $05 ; : '%'   INLINE/CALL> U. $25 ;
-: 'ACK' INLINE/CALL> U. $06 ; : '&'   INLINE/CALL> U. $26 ;
-: 'BEL' INLINE/CALL> U. $07 ; : '''   INLINE/CALL> U. $27 ;
-: 'BS'  INLINE/CALL> U. $08 ; : '('   INLINE/CALL> U. $28 ;
-: 'HT'  INLINE/CALL> U. $09 ; : ')'   INLINE/CALL> U. $29 ;
-: 'LF'  INLINE/CALL> U. $0A ; : '*'   INLINE/CALL> U. $2A ;
-: 'VT'  INLINE/CALL> U. $0B ; : '+'   INLINE/CALL> U. $2B ;
-: 'FF'  INLINE/CALL> U. $0C ; : ','   INLINE/CALL> U. $2C ;
-: 'CR'  INLINE/CALL> U. $0D ; : '-'   INLINE/CALL> U. $2D ;
-: 'SO'  INLINE/CALL> U. $0E ; : '.'   INLINE/CALL> U. $2E ;
-: 'SI'  INLINE/CALL> U. $0F ; : '/'   INLINE/CALL> U. $2F ;
-: 'DLE' INLINE/CALL> U. $10 ; : '0'   INLINE/CALL> U. $30 ;
-: 'DC1' INLINE/CALL> U. $11 ; : '1'   INLINE/CALL> U. $31 ;
-: 'DC2' INLINE/CALL> U. $12 ; : '2'   INLINE/CALL> U. $32 ;
-: 'DC3' INLINE/CALL> U. $13 ; : '3'   INLINE/CALL> U. $33 ;
-: 'DC4' INLINE/CALL> U. $14 ; : '4'   INLINE/CALL> U. $34 ;
-: 'NAK' INLINE/CALL> U. $15 ; : '5'   INLINE/CALL> U. $35 ;
-: 'SYN' INLINE/CALL> U. $16 ; : '6'   INLINE/CALL> U. $36 ;
-: 'ETB' INLINE/CALL> U. $17 ; : '7'   INLINE/CALL> U. $37 ;
-: 'CAN' INLINE/CALL> U. $18 ; : '8'   INLINE/CALL> U. $38 ;
-: 'EM'  INLINE/CALL> U. $19 ; : '9'   INLINE/CALL> U. $39 ;
-: 'SUB' INLINE/CALL> U. $1A ; : ':'   INLINE/CALL> U. $3A ;
-: 'ESC' INLINE/CALL> U. $1B ; : ';'   INLINE/CALL> U. $3B ;
-: 'FS'  INLINE/CALL> U. $1C ; : '<'   INLINE/CALL> U. $3C ;
-: 'GS'  INLINE/CALL> U. $1D ; : '='   INLINE/CALL> U. $3D ;
-: 'RS'  INLINE/CALL> U. $1E ; : '>'   INLINE/CALL> U. $3E ;
-: 'US'  INLINE/CALL> U. $1F ; : '?'   INLINE/CALL> U. $3F ;
+( : 'NUL' INLINE/CALL>     0  ; ) : 'BL'  INLINE/CALL> U. $20 ;
+\ : 'SOH' INLINE/CALL> U. $01 ; \ : '!'   INLINE/CALL> U. $21 ;
+\ : 'STX' INLINE/CALL> U. $02 ; \ : '"'   INLINE/CALL> U. $22 ;
+\ : 'ETX' INLINE/CALL> U. $03 ; \ : '#'   INLINE/CALL> U. $23 ;
+\ : 'SOT' INLINE/CALL> U. $04 ; \ : '$'   INLINE/CALL> U. $24 ;
+\ : 'ENQ' INLINE/CALL> U. $05 ; \ : '%'   INLINE/CALL> U. $25 ;
+\ : 'ACK' INLINE/CALL> U. $06 ; \ : '&'   INLINE/CALL> U. $26 ;
+\ : 'BEL' INLINE/CALL> U. $07 ; \ : '''   INLINE/CALL> U. $27 ;
+\ : 'BS'  INLINE/CALL> U. $08 ; \ : '('   INLINE/CALL> U. $28 ;
+\ : 'HT'  INLINE/CALL> U. $09 ; \ : ')'   INLINE/CALL> U. $29 ;
+  : 'LF'  INLINE/CALL> U. $0A ; \ : '*'   INLINE/CALL> U. $2A ;
+\ : 'VT'  INLINE/CALL> U. $0B ; \ : '+'   INLINE/CALL> U. $2B ;
+\ : 'FF'  INLINE/CALL> U. $0C ; \ : ','   INLINE/CALL> U. $2C ;
+( : 'CR'  INLINE/CALL> U. $0D ; ) : '-'   INLINE/CALL> U. $2D ;
+\ : 'SO'  INLINE/CALL> U. $0E ; \ : '.'   INLINE/CALL> U. $2E ;
+\ : 'SI'  INLINE/CALL> U. $0F ; \ : '/'   INLINE/CALL> U. $2F ;
+( : 'DLE' INLINE/CALL> U. $10 ; ) : '0'   INLINE/CALL> U. $30 ;
+\ : 'DC1' INLINE/CALL> U. $11 ; \ : '1'   INLINE/CALL> U. $31 ;
+\ : 'DC2' INLINE/CALL> U. $12 ; \ : '2'   INLINE/CALL> U. $32 ;
+\ : 'DC3' INLINE/CALL> U. $13 ; \ : '3'   INLINE/CALL> U. $33 ;
+\ : 'DC4' INLINE/CALL> U. $14 ; \ : '4'   INLINE/CALL> U. $34 ;
+\ : 'NAK' INLINE/CALL> U. $15 ; \ : '5'   INLINE/CALL> U. $35 ;
+\ : 'SYN' INLINE/CALL> U. $16 ; \ : '6'   INLINE/CALL> U. $36 ;
+\ : 'ETB' INLINE/CALL> U. $17 ; \ : '7'   INLINE/CALL> U. $37 ;
+\ : 'CAN' INLINE/CALL> U. $18 ; \ : '8'   INLINE/CALL> U. $38 ;
+\ : 'EM'  INLINE/CALL> U. $19 ; \ : '9'   INLINE/CALL> U. $39 ;
+\ : 'SUB' INLINE/CALL> U. $1A ; \ : ':'   INLINE/CALL> U. $3A ;
+\ : 'ESC' INLINE/CALL> U. $1B ; \ : ';'   INLINE/CALL> U. $3B ;
+\ : 'FS'  INLINE/CALL> U. $1C ; \ : '<'   INLINE/CALL> U. $3C ;
+\ : 'GS'  INLINE/CALL> U. $1D ; \ : '='   INLINE/CALL> U. $3D ;
+\ : 'RS'  INLINE/CALL> U. $1E ; \ : '>'   INLINE/CALL> U. $3E ;
+\ : 'US'  INLINE/CALL> U. $1F ; \ : '?'   INLINE/CALL> U. $3F ;
 
-: '@'   INLINE/CALL> U. $40 ; : '`'   INLINE/CALL> U. $60 ;
-: 'A'   INLINE/CALL> U. $41 ; : 'a'   INLINE/CALL> U. $61 ;
-: 'B'   INLINE/CALL> U. $42 ; : 'b'   INLINE/CALL> U. $62 ;
-: 'C'   INLINE/CALL> U. $43 ; : 'c'   INLINE/CALL> U. $63 ;
-: 'D'   INLINE/CALL> U. $44 ; : 'd'   INLINE/CALL> U. $64 ;
-: 'E'   INLINE/CALL> U. $45 ; : 'e'   INLINE/CALL> U. $65 ;
-: 'F'   INLINE/CALL> U. $46 ; : 'f'   INLINE/CALL> U. $66 ;
-: 'G'   INLINE/CALL> U. $47 ; : 'g'   INLINE/CALL> U. $67 ;
-: 'H'   INLINE/CALL> U. $48 ; : 'h'   INLINE/CALL> U. $68 ;
-: 'I'   INLINE/CALL> U. $49 ; : 'i'   INLINE/CALL> U. $69 ;
-: 'J'   INLINE/CALL> U. $4A ; : 'j'   INLINE/CALL> U. $6A ;
-: 'K'   INLINE/CALL> U. $4B ; : 'k'   INLINE/CALL> U. $6B ;
-: 'L'   INLINE/CALL> U. $4C ; : 'l'   INLINE/CALL> U. $6C ;
-: 'M'   INLINE/CALL> U. $4D ; : 'm'   INLINE/CALL> U. $6D ;
-: 'N'   INLINE/CALL> U. $4E ; : 'n'   INLINE/CALL> U. $6E ;
-: 'O'   INLINE/CALL> U. $4F ; : 'o'   INLINE/CALL> U. $6F ;
-: 'P'   INLINE/CALL> U. $50 ; : 'p'   INLINE/CALL> U. $70 ;
-: 'Q'   INLINE/CALL> U. $51 ; : 'q'   INLINE/CALL> U. $71 ;
-: 'R'   INLINE/CALL> U. $52 ; : 'r'   INLINE/CALL> U. $72 ;
-: 'S'   INLINE/CALL> U. $53 ; : 's'   INLINE/CALL> U. $73 ;
-: 'T'   INLINE/CALL> U. $54 ; : 't'   INLINE/CALL> U. $74 ;
-: 'U'   INLINE/CALL> U. $55 ; : 'u'   INLINE/CALL> U. $75 ;
-: 'V'   INLINE/CALL> U. $56 ; : 'v'   INLINE/CALL> U. $76 ;
-: 'W'   INLINE/CALL> U. $57 ; : 'w'   INLINE/CALL> U. $77 ;
-: 'X'   INLINE/CALL> U. $58 ; : 'x'   INLINE/CALL> U. $78 ;
-: 'Y'   INLINE/CALL> U. $59 ; : 'y'   INLINE/CALL> U. $79 ;
-: 'Z'   INLINE/CALL> U. $5A ; : 'z'   INLINE/CALL> U. $7A ;
-: '['   INLINE/CALL> U. $5B ; : '{'   INLINE/CALL> U. $7B ;
-: '\'   INLINE/CALL> U. $5C ; : '|'   INLINE/CALL> U. $7C ;
-: ']'   INLINE/CALL> U. $5D ; : '}'   INLINE/CALL> U. $7D ;
-: '^'   INLINE/CALL> U. $5E ; : '~'   INLINE/CALL> U. $7E ;
-: '_'   INLINE/CALL> U. $5F ; : 'DEL' INLINE/CALL> U. $7F ;
+\ : '@'   INLINE/CALL> U. $40 ; \ : '`'   INLINE/CALL> U. $60 ;
+\ : 'A'   INLINE/CALL> U. $41 ; \ : 'a'   INLINE/CALL> U. $61 ;
+\ : 'B'   INLINE/CALL> U. $42 ; \ : 'b'   INLINE/CALL> U. $62 ;
+\ : 'C'   INLINE/CALL> U. $43 ; \ : 'c'   INLINE/CALL> U. $63 ;
+\ : 'D'   INLINE/CALL> U. $44 ; \ : 'd'   INLINE/CALL> U. $64 ;
+\ : 'E'   INLINE/CALL> U. $45 ; \ : 'e'   INLINE/CALL> U. $65 ;
+\ : 'F'   INLINE/CALL> U. $46 ; \ : 'f'   INLINE/CALL> U. $66 ;
+\ : 'G'   INLINE/CALL> U. $47 ; \ : 'g'   INLINE/CALL> U. $67 ;
+\ : 'H'   INLINE/CALL> U. $48 ; \ : 'h'   INLINE/CALL> U. $68 ;
+\ : 'I'   INLINE/CALL> U. $49 ; \ : 'i'   INLINE/CALL> U. $69 ;
+\ : 'J'   INLINE/CALL> U. $4A ; \ : 'j'   INLINE/CALL> U. $6A ;
+\ : 'K'   INLINE/CALL> U. $4B ; \ : 'k'   INLINE/CALL> U. $6B ;
+\ : 'L'   INLINE/CALL> U. $4C ; \ : 'l'   INLINE/CALL> U. $6C ;
+\ : 'M'   INLINE/CALL> U. $4D ; \ : 'm'   INLINE/CALL> U. $6D ;
+\ : 'N'   INLINE/CALL> U. $4E ; \ : 'n'   INLINE/CALL> U. $6E ;
+\ : 'O'   INLINE/CALL> U. $4F ; \ : 'o'   INLINE/CALL> U. $6F ;
+\ : 'P'   INLINE/CALL> U. $50 ; \ : 'p'   INLINE/CALL> U. $70 ;
+\ : 'Q'   INLINE/CALL> U. $51 ; \ : 'q'   INLINE/CALL> U. $71 ;
+\ : 'R'   INLINE/CALL> U. $52 ; \ : 'r'   INLINE/CALL> U. $72 ;
+\ : 'S'   INLINE/CALL> U. $53 ; \ : 's'   INLINE/CALL> U. $73 ;
+\ : 'T'   INLINE/CALL> U. $54 ; \ : 't'   INLINE/CALL> U. $74 ;
+\ : 'U'   INLINE/CALL> U. $55 ; \ : 'u'   INLINE/CALL> U. $75 ;
+\ : 'V'   INLINE/CALL> U. $56 ; \ : 'v'   INLINE/CALL> U. $76 ;
+\ : 'W'   INLINE/CALL> U. $57 ; \ : 'w'   INLINE/CALL> U. $77 ;
+\ : 'X'   INLINE/CALL> U. $58 ; \ : 'x'   INLINE/CALL> U. $78 ;
+\ : 'Y'   INLINE/CALL> U. $59 ; \ : 'y'   INLINE/CALL> U. $79 ;
+\ : 'Z'   INLINE/CALL> U. $5A ; \ : 'z'   INLINE/CALL> U. $7A ;
+\ : '['   INLINE/CALL> U. $5B ; \ : '{'   INLINE/CALL> U. $7B ;
+\ : '\'   INLINE/CALL> U. $5C ; \ : '|'   INLINE/CALL> U. $7C ;
+\ : ']'   INLINE/CALL> U. $5D ; \ : '}'   INLINE/CALL> U. $7D ;
+\ : '^'   INLINE/CALL> U. $5E ; \ : '~'   INLINE/CALL> U. $7E ;
+\ : '_'   INLINE/CALL> U. $5F ; \ : 'DEL' INLINE/CALL> U. $7F ;
 
 : CR ( -- ) CALL>
     \ Emit a newline to stdout.
@@ -691,6 +709,40 @@
 : SPACE ( -- ) CALL>
     \ Emit a single space character to stdout.
     'BL' EMIT ;
+
+: NAME-NOT-FOUND CALL>
+    \ TODO display message.
+    MOVL#: RAX $SYS_EXIT
+    MOVL#: RDI $0000000D \ exit code = 13
+    SYSCALL ;
+
+: NT' ( -- nt ) CALL>
+    DUP
+    KWORD KFIND
+    MOVQ< RBX, RAX
+    TESTQ> RAX, RAX
+    JNZ. $05
+    NAME-NOT-FOUND
+    ;
+
+: POSTPONE
+    NT'
+    ^48 ^B8
+    MOVQ< RAX, RBX
+    STOSQ
+    ^FF ^60
+    MOVB#. RAX $DICT.CODE
+    STOSB ;
+
+: LITERAL
+    POSTPONE DUP
+    \ TODO emit nicer code for smaller literals
+    ^48 ^BB
+    MOVQ< RAX, RBX
+    STOSQ
+    ;
+
+: [NT'] NT' POSTPONE LITERAL ;
 
 [KERNEL-DEFINITIONS]
 
@@ -827,58 +879,58 @@
 [ASSEMBLER-DEFINITIONS]
 
 \ Like ?IF but use CPU flags instead of testing stack top.
-: IFNO ^70 BRANCH> ; \ if no overflow      (OF=0)
-: IFO  ^71 BRANCH> ; \ if overflow         (OF=1)
-: IFAE ^72 BRANCH> ; \ if above or equal   (CF=0)
-: IFB  ^73 BRANCH> ; \ if below            (CF=1)
-: IFNZ ^74 BRANCH> ; \ if non-equal        (ZF=1)
-: IFZ  ^75 BRANCH> ; \ if zero             (ZF=0)
-: IFA  ^76 BRANCH> ; \ if above            (CF=0 and ZF=0)
-: IFBE ^77 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
-: IFNS ^78 BRANCH> ; \ if positive         (SF=0)
-: IFS  ^79 BRANCH> ; \ if negative         (SF=1)
-: IFPO ^7A BRANCH> ; \ if parity odd       (PF=0)
-: IFPE ^7B BRANCH> ; \ if parity even      (PF=1)
-: IFGE ^7C BRANCH> ; \ if greater or equal (SF=OF)
-: IFL  ^7D BRANCH> ; \ if less             (SF<>OF)
-: IFG  ^7E BRANCH> ; \ if greater          (SF=OF)
-: IFLE ^7F BRANCH> ; \ if less or equal    (SF<>OF)
+\ : IFNO ^70 BRANCH> ; \ if no overflow      (OF=0)
+\ : IFO  ^71 BRANCH> ; \ if overflow         (OF=1)
+\ : IFAE ^72 BRANCH> ; \ if above or equal   (CF=0)
+\ : IFB  ^73 BRANCH> ; \ if below            (CF=1)
+\ : IFNZ ^74 BRANCH> ; \ if non-equal        (ZF=1)
+\ : IFZ  ^75 BRANCH> ; \ if zero             (ZF=0)
+\ : IFA  ^76 BRANCH> ; \ if above            (CF=0 and ZF=0)
+\ : IFBE ^77 BRANCH> ; \ if below or equal   (CF=1 or  ZF=1)
+\ : IFNS ^78 BRANCH> ; \ if positive         (SF=0)
+\ : IFS  ^79 BRANCH> ; \ if negative         (SF=1)
+\ : IFPO ^7A BRANCH> ; \ if parity odd       (PF=0)
+\ : IFPE ^7B BRANCH> ; \ if parity even      (PF=1)
+\ : IFGE ^7C BRANCH> ; \ if greater or equal (SF=OF)
+\ : IFL  ^7D BRANCH> ; \ if less             (SF<>OF)
+\ : IFG  ^7E BRANCH> ; \ if greater          (SF=OF)
+\ : IFLE ^7F BRANCH> ; \ if less or equal    (SF<>OF)
 
 \ Like ?UNTIL but using CPU flags instead of testing stack top.
-: UNTILNO ^70 <BRANCH ; \ until no overflow      (OF=0)
-: UNTILO  ^71 <BRANCH ; \ until overflow         (OF=1)
-: UNTILAE ^72 <BRANCH ; \ until above or equal   (CF=0)
-: UNTILB  ^73 <BRANCH ; \ until below            (CF=1)
-: UNTILNZ ^74 <BRANCH ; \ until non-equal        (ZF=1)
-: UNTILZ  ^75 <BRANCH ; \ until zero             (ZF=0)
-: UNTILA  ^76 <BRANCH ; \ until above            (CF=0 and ZF=0)
-: UNTILBE ^77 <BRANCH ; \ until below or equal   (CF=1 or  ZF=1)
-: UNTILNS ^78 <BRANCH ; \ until positive         (SF=0)
-: UNTILS  ^79 <BRANCH ; \ until negative         (SF=1)
-: UNTILPO ^7A <BRANCH ; \ until parity odd       (PF=0)
-: UNTILPE ^7B <BRANCH ; \ until parity even      (PF=1)
-: UNTILGE ^7C <BRANCH ; \ until greater or equal (SF=OF)
-: UNTILL  ^7D <BRANCH ; \ until less             (SF<>OF)
-: UNTILG  ^7E <BRANCH ; \ until greater          (SF=OF)
-: UNTILLE ^7F <BRANCH ; \ until less or equal    (SF<>OF)
+\ : UNTILNO ^70 <BRANCH ; \ until no overflow      (OF=0)
+\ : UNTILO  ^71 <BRANCH ; \ until overflow         (OF=1)
+\ : UNTILAE ^72 <BRANCH ; \ until above or equal   (CF=0)
+\ : UNTILB  ^73 <BRANCH ; \ until below            (CF=1)
+\ : UNTILNZ ^74 <BRANCH ; \ until non-equal        (ZF=1)
+\ : UNTILZ  ^75 <BRANCH ; \ until zero             (ZF=0)
+  : UNTILA  ^76 <BRANCH ; \ until above            (CF=0 and ZF=0)
+  : UNTILBE ^77 <BRANCH ; \ until below or equal   (CF=1 or  ZF=1)
+\ : UNTILNS ^78 <BRANCH ; \ until positive         (SF=0)
+\ : UNTILS  ^79 <BRANCH ; \ until negative         (SF=1)
+\ : UNTILPO ^7A <BRANCH ; \ until parity odd       (PF=0)
+\ : UNTILPE ^7B <BRANCH ; \ until parity even      (PF=1)
+\ : UNTILGE ^7C <BRANCH ; \ until greater or equal (SF=OF)
+\ : UNTILL  ^7D <BRANCH ; \ until less             (SF<>OF)
+\ : UNTILG  ^7E <BRANCH ; \ until greater          (SF=OF)
+\ : UNTILLE ^7F <BRANCH ; \ until less or equal    (SF<>OF)
 
 \ Like ?WHILE but uses CPU flags instead of testing stack top.
-: WHILENO ^70 BRANCH> SWAP ; \ while no overflow      (OF=0)
-: WHILEO  ^71 BRANCH> SWAP ; \ while overflow         (OF=1)
-: WHILEAE ^72 BRANCH> SWAP ; \ while above or equal   (CF=0)
-: WHILEB  ^73 BRANCH> SWAP ; \ while below            (CF=1)
-: WHILENZ ^74 BRANCH> SWAP ; \ while non-equal        (ZF=1)
-: WHILEZ  ^75 BRANCH> SWAP ; \ while zero             (ZF=0)
-: WHILEA  ^76 BRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
-: WHILEBE ^77 BRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
-: WHILENS ^78 BRANCH> SWAP ; \ while positive         (SF=0)
-: WHILES  ^79 BRANCH> SWAP ; \ while negative         (SF=1)
-: WHILEPO ^7A BRANCH> SWAP ; \ while parity odd       (PF=0)
-: WHILEPE ^7B BRANCH> SWAP ; \ while parity even      (PF=1)
-: WHILEGE ^7C BRANCH> SWAP ; \ while greater or equal (SF=OF)
-: WHILEL  ^7D BRANCH> SWAP ; \ while less             (SF<>OF)
-: WHILEG  ^7E BRANCH> SWAP ; \ while greater          (SF=OF)
-: WHILELE ^7F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
+\ : WHILENO ^70 BRANCH> SWAP ; \ while no overflow      (OF=0)
+\ : WHILEO  ^71 BRANCH> SWAP ; \ while overflow         (OF=1)
+\ : WHILEAE ^72 BRANCH> SWAP ; \ while above or equal   (CF=0)
+\ : WHILEB  ^73 BRANCH> SWAP ; \ while below            (CF=1)
+\ : WHILENZ ^74 BRANCH> SWAP ; \ while non-equal        (ZF=1)
+\ : WHILEZ  ^75 BRANCH> SWAP ; \ while zero             (ZF=0)
+\ : WHILEA  ^76 BRANCH> SWAP ; \ while above            (CF=0 and ZF=0)
+\ : WHILEBE ^77 BRANCH> SWAP ; \ while below or equal   (CF=1 or  ZF=1)
+\ : WHILENS ^78 BRANCH> SWAP ; \ while positive         (SF=0)
+\ : WHILES  ^79 BRANCH> SWAP ; \ while negative         (SF=1)
+\ : WHILEPO ^7A BRANCH> SWAP ; \ while parity odd       (PF=0)
+\ : WHILEPE ^7B BRANCH> SWAP ; \ while parity even      (PF=1)
+\ : WHILEGE ^7C BRANCH> SWAP ; \ while greater or equal (SF=OF)
+\ : WHILEL  ^7D BRANCH> SWAP ; \ while less             (SF<>OF)
+\ : WHILEG  ^7E BRANCH> SWAP ; \ while greater          (SF=OF)
+\ : WHILELE ^7F BRANCH> SWAP ; \ while less or equal    (SF<>OF)
 
 [FORTH-DEFINITIONS]
 
@@ -927,6 +979,11 @@
     MOVQ> RAX, [R15]
     MOVQ< RBX, RDX ;
 
+: 1+ ( n1 -- n2 ) INLINE/CALL>
+    INCQ_ RBX ;
+: 1- ( n1 -- n2 ) INLINE/CALL>
+    DECQ_ RBX ;
+
 : NEGATE ( i1 -- i2 ) INLINE/CALL>
     NEGQ_ RBX ;
 : INVERT ( i1 -- i2 ) INLINE/CALL>
@@ -965,6 +1022,36 @@
         CMP-AL. $20
     UNTILBE ;
 
+: FIND-NAME-IN ( c-addr u wid -- nt|0 ) CALL>
+    DROP DROP DROP 0 ;
+
+: EXIT ^C3 ;
+
+: POSTPONE
+    PARSE-NAME
+\    FIND-NAME
+    ;
+
+\ : LITERAL ( x -- )
+\    \ Compile a value down to a literal in the program.
+\    POSTPONE DUP
+\    TESTQ> RBX, RBX
+\   IFZ
+\       POSTPONE 0
+\       EXIT
+\   THEN
+\   MOVL< RAX, RBX
+\   CMPQ< RAX, RBX
+\   IFZ
+\       ^B8
+\       EXIT
+\   THEN
+\   MOVZXD
+\   ^48 ^B8
+\   MOVQ< RAX, RBX
+\   STOSQ
+\   DROP ;
+
 :  I8_MAX INLINE/CALL> U.  $7F ;
 :  I8_MIN INLINE/CALL> I:  $FFFFFF80 ;
 :  U8_MAX INLINE/CALL> U.  $FF ;
@@ -982,69 +1069,10 @@
 : U64_MAX INLINE/CALL> I:  $FFFFFFFF ;
 : U64_MIN INLINE/CALL> 0 ;
 
-[KERNEL-DEFINITIONS]
-
-: [SETUP2]
-    \ MOVL#: R8 $01020304
-    MOVL_: R10 $00000000
-    XORQ< R13, R13
-    LEAQ< R14, [RBP]: $0F800000
-    ;
-[SETUP2]
-
-: T> ( T: ty -- ) ( -- ty ) CALL>
-   \ Pop a value type from type stack.
-   0 ;
-: 2T> ( T: ty1 ty2 -- ) ( -- ty1 ty2 ) CALL>
-   \ Pop two value types from type stack.
-    T> >R T> R> ;
-: 3T> ( T: ty1 ty2 ty3 -- ) ( -- ty1 ty2 ty3 ) CALL>
-    T> >R 2T> R> ;
-
-: >T ( ty -- ) ( T: -- ty ) CALL>
-    \ Push a value type on the type stack.
-    DROP ;
-: 2>T ( ty1 ty2 -- ) ( T: -- ty1 ty2 ) CALL>
-    \ Push two value types on the type stack.
-    >R >T R> >T ;
-: 3>T ( ty1 ty2 ty3 -- ) ( T: -- ty1 ty2 ty3 ) CALL>
-    \ Push three value types on the type stack.
-    >R 2>T R> >T ;
-
-\ [MIRTH-DEFINITIONS]
-
-: { SKIP-UNTIL. $7D ;
-: dup { A +dup } ( A -- A A )
-    T> DUP >T >T \ TODO check type has +dup trait, & use type-specific action
-    CALL> DUP ;
-: drop { A +drop } ( A -- )
-    T> DROP \ TODO check type has +drop trait, & use type-specific action
-    CALL> DROP ;
-: nip { A +drop } { B } ( A B -- B )
-    2T> NIP 2>T
-    CALL> NIP ;
-: swap { A B } ( A B -- B A )
-    2T> SWAP 2>T \ TODO handle wider types maybe
-    CALL> SWAP ;
-: rotl { A B C } ( A B C -- B C A )
-    3T> ROTL 3>T \ TODO handle wider types maybe
-    CALL> ROTL ;
-: rotr { A B C } ( A B C -- C A B )
-    3T> ROTR 3>T \ TODO handle wider types maybe
-    CALL> ROTR ;
-
-: 2dup { A +dup } { B +dup } ( A B -- A B A B )
-    2T> 2DUP 2>T 2>T
-    CALL> 2DROP ;
-
-: 2drop { A +drop } { B +drop } ( A B -- )
-    2T> 2DROP
-    CALL> 2DROP ;
-
 [FORTH-DEFINITIONS]
 
 : MAIN CALL>
-    'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
+    \ 'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
     U. $0A . CR
     I8_MAX .
     I8_MIN . CR

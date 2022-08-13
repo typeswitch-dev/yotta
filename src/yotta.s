@@ -20,7 +20,7 @@ MAP_PRIVATE equ 0x2
 MAP_FAILED  equ -1
 
 NAME_SIZE equ 32
-FIND_SIZE equ 128
+SORD_SIZE equ 128
 
 struc DICT
 .LINK resq 1
@@ -34,14 +34,16 @@ struc USER
 .PROG resq 1 ; base of program memory
 .KERS resq 1 ; kernel source
 .EVAL resq 1 ; literal evaluator, i.e. code to fall back on if FIND failed
-.NAME resq NAME_SIZE/8 ; holds last name
+.NAME resq NAME_SIZE/8 ; name buffer, holds last name parsed
 .KERW resq 1 ; kernel word list
 .MINW resq 1 ; minimal word list
 .ASMW resq 1 ; assembler word list
 .FORW resq 1 ; forth word list
 .MIRW resq 1 ; mirth word list
 .DICT resq 1 ; dictionary for new definitions
-.FIND resq FIND_SIZE/8 ; search order
+.WORD resq 1 ; word primitive
+.FIND resq 1 ; find primitive
+.SORD resq SORD_SIZE/8 ; search order
 endstruc
 
 _main:  ; align stack
@@ -56,20 +58,24 @@ _main:  ; align stack
 
         lea rax, [rel CARET]
         mov [rbp + USER.EVAL], rax
+        lea rax, [rel FIND]
+        mov [rbp + USER.FIND], rax
+        lea rax, [rel _WORD]
+        mov [rbp + USER.WORD], rax
         lea rax, [rel KERNEL]
         mov [rbp + USER.KERS], rax
         lea rcx, [rbp + USER.KERW]
         mov [rcx], rdi
         mov [rbp + USER.DICT], rcx
-        mov [rbp + USER.FIND], rcx
+        mov [rbp + USER.SORD], rcx
         lea rcx, [rbp + USER.MIRW]
-        mov [rbp + USER.FIND + 8], rcx
+        mov [rbp + USER.SORD + 8], rcx
         lea rcx, [rbp + USER.FORW]
-        mov [rbp + USER.FIND + 16], rcx
+        mov [rbp + USER.SORD + 16], rcx
         lea rcx, [rbp + USER.ASMW]
-        mov [rbp + USER.FIND + 24], rcx
+        mov [rbp + USER.SORD + 24], rcx
         lea rcx, [rbp + USER.MINW]
-        mov [rbp + USER.FIND + 32], rcx
+        mov [rbp + USER.SORD + 32], rcx
 
         xor eax, eax
         stosq ; LINK
@@ -179,7 +185,7 @@ FIND:   push rsi
         push rcx
         push rbx
         xor ebx, ebx
-.list   mov rax, [rbp + USER.FIND + rbx*8]  ; continue with list # rcx
+.list   mov rax, [rbp + USER.SORD + rbx*8]  ; continue with list # rcx
         test rax, rax
         jz .fail
         jmp .link
@@ -195,7 +201,7 @@ FIND:   push rsi
         jnz .item
 
         inc rbx
-        cmp rbx, FIND_SIZE/8
+        cmp rbx, SORD_SIZE/8
         jb .list
 
 .found  test rax, rax
