@@ -221,8 +221,8 @@
 : SUB-RAX: OPQ ^2D ; : CMP-RAX: OPQ ^3D ;
 
 : PUSHW.. OPW ^68 ;
-: PUSHQ.  OPL ^6A ; \ Pushes 64-bits even without REX.W prefix. TODO verify
-: PUSHQ:  OPL ^68 ; \ Pushes 64-bits even without REX.W prefix. TODO verify
+: PUSHQ.  OPL ^6A ; \ Pushes 64-bits even without REX.W prefix
+: PUSHQ:  OPL ^68 ; \ Pushes 64-bits even without REX.W prefix
 
 : MOV-AL-@::  OPB ^A0 ; : MOV-AL-!::  OPB ^A2 ;
 : MOV-AX-@::  OPW ^A1 ; : MOV-AX-!::  OPW ^A3 ;
