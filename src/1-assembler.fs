@@ -1,45 +1,146 @@
 [KERNEL-DEFINITIONS]
 
-: PREPARE-REX CALL>
+: NO-REX/VEX ( -- R8:0 ) CALL>
+    $4D $33 $C0 ;       \ XOR R8, R8
+: REX/VEX ( -- R8:RDI ) CALL>
+    $49 $89 $F8 ;       \ MOV R8, RDI
+: OPCODE ( -- R9:RDI ) CALL>
+    $49 $89 $F9 ;       \ MOV R9, RDI
+
+: SHIFT-OP ( R9 RDI -- R9+1 RDI+1 ) CALL>
+    \ Shift the entire OP up by one byte to make room for prefix.
+    $50                 \ PUSH RAX
+    $49 $8B $41 $08     \ MOVQ< RAX, [R9]. $08
+    $49 $89 $41 $09     \ MOVQ> RAX, [R9]. $09
+    $49 $8B $41 $00     \ MOVQ< RAX, [R9]. $00
+    $49 $89 $41 $01     \ MOVQ> RAX, [R9]. $01
+    $4D $8D $49 $01     \ LEAQ< R9, [R9]. $01
+    $48 $8D $7F $01     \ LEAQ< RDI, [RDI]. $01
+    $58                 \ POP RAX
+    ;
+
+: IS-REX ( R8 -- R8 ZF:is-rex ) CALL>
+    \ Check that R8 points to a REX prefix byte.
+    \ Result is returned in ZF:
+    \   ZF=1 means it is a REX prefix.
+    \   ZF=0 means it's not a REX prefix.
+    $50                 \ PUSHQ# RAX
+    $41 $8A $00         \ MOVB< AL, [R8]
+    $24 $F0             \ AND-AL. $F0
+    $3C $40             \ CMP-AL. $40
+    $58                 \ POPQ# RAX
+    ;
+
+: IS-VEX2 ( R8 -- R8 ZF:is-vex2 ) CALL>
+    \ Check that R8 points to the start of a 2-byte VEX prefix.
+    \ Result is returned in ZF:
+    \   ZF=1 means it is 2-byte VEX prefix.
+    \   ZF=0 means it's not a 2-byte VEX prefix.
+    $41 $80 $38 $C5     \ CMPB_. [R8] $C5
+    ;
+
+: IS-VEX3 ( R8 -- R8 ZF:is-vex3 ) CALL>
+    \ Check that R8 points to the start of a 3-byte VEX prefix.
+    \ Result is returned in ZF:
+    \   ZF=1 means it is 3-byte VEX prefix.
+    \   ZF=0 means it's not a 3-byte VEX prefix.
+    $41 $80 $38 $C4     \ CMPB_. [R8] $C4
+    ;
+
+ : IS-EVEX ( R8 -- R8 ZF:is-evex ) CALL>
+    \ Check that R8 points to the start of a EVEX prefix.
+    \ Result is returned in ZF:
+    \   ZF=1 means it is EVEX prefix.
+    \   ZF=0 means it's not a EVEX prefix.
+    $41 $80 $38 $62     \ CMPB_. [R8] $62
+    ;
+
+: PREPARE-REX ( R8:x|0 R9:op -- R8:x|REX R9:op ZF:is-rex ) CALL>
     \ Make sure REX prefix exists, insert it if necessary.
     \ Note that R9 points to the current opcode (after
     \ legacy prefixes and REX prefix if it exists) and
     \ R8 points to the REX prefix. R8 is NULL if the
     \ current instruction doesn't have a REX prefix yet.
     \ So what PREPARE-REX tries to do is create a blank
-    \ REX prefix if it's missing, and add R8.
+    \ REX prefix if it's missing.
+    \ If a VEX or EVEX prefix exists instead, this word
+    \ leaves them alone, does not insert a REX prefix.
     $4D $85 $C0         \ TEST R8, R8
-    $75 $16             \ JNZ +22
-    $4D $8B $01         \ MOVQ< R8, [R9]
-    $4D $89 $41 $01     \ MOVQ> R8, [R9]. $01
+    $75 $0C             \ JNZ +12
     $4D $8B $C1         \ MOVQ< R8, R9
+    SHIFT-OP
     $41 $C6 $00 $40     \ MOVB_. [R8] 0x40
-    $4D $8D $49 $01     \ LEAQ< R9, [R9]. $01
-    $48 $8D $7F $01     \ LEAQ< RDI, [RDI]. $01
+    IS-REX
     ;
 
-: +W CALL> PREPARE-REX $41 $80 $08 $08 ; \ ORB_. [R8] 0x08
-: +R CALL> PREPARE-REX $41 $80 $08 $04 ; \ ORB_. [R8] 0x04
-: +X CALL> PREPARE-REX $41 $80 $08 $02 ; \ ORB_. [R8] 0x02
-: +B CALL> PREPARE-REX $41 $80 $08 $01 ; \ ORB_. [R8] 0x01
+: PREPARE-VEX3 ( R8:x|VEX2 R9:op -- R8:x|VEX3 R9:op ZF:is-vex3 ) CALL>
+    \ Convert a 2-byte VEX prefix, if present, into
+    \ a 3-byte VEX prefix. The 3-byte version is needed
+    \ to encode W,X,B bits, and a different map_select.
+    IS-VEX2
+    $75 $1F             \ JZ +31
+    SHIFT-OP
+    $41 $C6 $00 $40     \ MOVB_. [R8] 0xC4
+    $41 $8A $40 $01     \ MOVB< RAX, [R8]. 0x01
+    $24 $7F             \ AND-AL. 0x7F
+    $41 $88 $40 $02     \ MOVB> RAX, [R8]. 0x02
+    $41 $8A $40 $01     \ MOVB< RAX, [R8]. 0x01
+    $24 $80             \ AND-AL. 0x80
+    $0C $61             \ OR-AL. 0x61
+    $41 $88 $40 $01     \ MOVB> RAX, [R8]. 0x01
+    IS-VEX3
+    ;
 
-: OPB CALL>
-    $4D $33 $C0         \ XOR R8, R8
-    $49 $89 $F9 ;       \ MOV R9, RDI
+: +W CALL>
+    PREPARE-REX
+    $75 $05             \ JNZ +05
+    $41 $80 $08 $08     \ ORB_. [R8] 0x08
+    $C3                 \ RET
+    PREPARE-VEX3
+    $75 $06             \ JNZ +06
+    $41 $80 $48 $02 $08 \ ORB_. [R8]. 0x02 0x08
+    $C3                 \ RET
+    ;                   \ TODO handle EVEX and/or panic
 
-: OPW CALL>
-    $B0 $66 $AA         \ MOV AL, 0x66; STOSB
-    $4D $33 $C0         \ XOR R8, R8
-    $49 $89 $F9 ;       \ MOV R9, RDI
+: +R CALL>
+    PREPARE-REX
+    $75 $05             \ JNZ +5
+    $41 $80 $08 $04     \ ORB_. [R8] 0x04
+    $C3                 \ RET
+    IS-VEX2
+    $74 $07             \ JZ +7
+    IS-VEX3
+    $75 $04             \ JNZ +6
+    $41 $80 $48 $01 $08 \ ORB_. [R8]. 0x01 0x08
+    $C3                 \ RET
+    ;                   \ TODO handle EVEX and/or panic
 
-: OPL CALL>
-    $4D $33 $C0         \ XOR R8, R8
-    $49 $89 $F9 ;       \ MOV R9, RDI
+: +X CALL>
+    PREPARE-REX
+    $75 $05             \ JNZ +05
+    $41 $80 $08 $02     \ ORB_. [R8] 0x02
+    $C3                 \ RET
+    PREPARE-VEX3
+    $75 $06             \ JNZ +06
+    $41 $80 $60 $01 $BF \ ANDB_. [R8]. 0x01 0xBF
+    $C3                 \ RET
+    ;                   \ TODO handle EVEX and/or panic
 
-: OPQ CALL>
-    $49 $89 $F8         \ MOV R8, RDI
-    $B0 $48 $AA         \ MOV AL, 0x48; STOSB
-    $49 $89 $F9 ;       \ MOV R9, RDI
+: +B CALL>
+    PREPARE-REX
+    $75 $05             \ JNZ +05
+    $41 $80 $08 $01     \ ORB_. [R8] 0x01
+    $C3                 \ RET
+    PREPARE-VEX3
+    $75 $06             \ JNZ +06
+    $41 $80 $60 $01 $DF \ ANDB_. [R8]. 0x01 0xDF
+    $C3                 \ RET
+    ;                   \ TODO handle EVEX and/or panic
+
+: OPB CALL>     NO-REX/VEX     OPCODE ;
+: OPW CALL> ^66 NO-REX/VEX     OPCODE ;
+: OPL CALL>     NO-REX/VEX     OPCODE ;
+: OPQ CALL>        REX/VEX ^48 OPCODE ;
 
 \ Opcode extensions. These are modrm bytes with the REG field
 \ prefilled, and the MOD field set to 3 (which is the default

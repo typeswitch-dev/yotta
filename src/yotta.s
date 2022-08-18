@@ -134,7 +134,8 @@ _main:  ; align stack
 EVAL:   call _WORD
         call FIND
         jz .fail
-        call [rax + DICT.CODE]
+        mov r13, rax
+        call [r13 + DICT.CODE]
         jmp EVAL
 .fail:  call qword [rbp + USER.EVAL]
         jmp EVAL

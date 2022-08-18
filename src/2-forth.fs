@@ -3,6 +3,7 @@
 : ;
     \ Store the end address of the word in
     \ its dictionary entry, and emit RET.
+    \ Trashes RAX.
     MOVQ< RAX, [RBP]: $USER.DICT
     MOVQ< RAX, [RAX]
     MOVQ> RDI, [RAX]. $DICT.DATA
@@ -13,10 +14,10 @@
     \ Changes the action of a word to be the inlining of
     \ its contents. Only do this if the word contains
     \ no referneces (e.g. CALLs) because otherwise the
-    \ reference will be all wrong.
+    \ reference will be wrong.
     MOVQ< RDX, RSI
     POPQ# RSI
-    MOVQ< RCX, [RAX]. $DICT.DATA
+    MOVQ< RCX, [R13]. $DICT.DATA
     SUBQ< RCX, RSI
     REP MOVSB
     MOVQ< RSI, RDX
@@ -27,7 +28,7 @@
     \ be ok to call this word directly too.
     MOVQ< RDX, RSI
     POPQ# RSI
-    MOVQ< RCX, [RAX]. $DICT.DATA
+    MOVQ< RCX, [R13]. $DICT.DATA
     SUBQ< RCX, RSI
     REP MOVSB
     MOVQ< RSI, RDX
@@ -43,6 +44,7 @@
     \ all the wordlists in the search order.
     \ Returns the first matching dictionary entry in RAX,
     \ if found, else returns 0 in RAX.
+    \ Also sets ZF based on result.
     CALLQ_ [RBP]: $USER.FIND ;
 
 : [SETUP]
@@ -262,12 +264,15 @@
 
 : POSTPONE
     NT'
-    ^48 ^B8
+    ^49 ^55         \ PUSH R13
+    ^49 ^BD         \ MOV R13, ___
     MOVQ< RAX, RBX
     STOSQ
-    ^FF ^60
+    ^41 ^FF ^65     \ CALL [R13 + $DICT.CODE]
     MOVB#. RAX $DICT.CODE
-    STOSB ;
+    STOSB
+    ^49 ^5D         \ POP R13
+    DROP ;
 
 : LITERAL
     POSTPONE DUP
@@ -275,7 +280,19 @@
     ^48 ^BB
     MOVQ< RAX, RBX
     STOSQ
+    DROP
     ;
+
+: ^VARIABLE
+    ^B8
+    MOVQ< RAX, [RBP]: $USER.HERE
+    SUBQ< RAX, RBP
+    STOSL
+    ^AB
+    ADDQ_. [RBP]: $USER.HERE $08
+    ;
+
+: $FOO ^VARIABLE ;
 
 : [NT'] NT' POSTPONE LITERAL ;
 
