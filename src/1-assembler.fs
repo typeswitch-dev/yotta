@@ -78,7 +78,7 @@
     \ a 3-byte VEX prefix. The 3-byte version is needed
     \ to encode W,X,B bits, and a different map_select.
     IS-VEX2
-    $75 $1F             \ JZ +31
+    $75 $1F             \ JNZ +31
     SHIFT-OP
     $41 $C6 $00 $40     \ MOVB_. [R8] 0xC4
     $41 $8A $40 $01     \ MOVB< RAX, [R8]. 0x01
