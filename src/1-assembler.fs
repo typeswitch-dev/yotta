@@ -1,8 +1,28 @@
 [KERNEL-DEFINITIONS]
 
 : ASM-PANIC CALL>
-    \ TODO do something nicer ... this is bad
-    $0F $38 $FF         \ #UD
+    \ Print "ASM PANIC!\n" to stderr and exit with code 4.
+    \ This is used when there is a problem with the way
+    \ the assembler was used. Note that an absence of
+    \ panic does not guarantee a valid instruction -- this
+    \ assembler has almost no validation.
+    $B8 $43 $21 $0A $00     \ MOVL#: RAX 'C!\n\0'
+    $50                     \ PUSHQ# RAX
+
+    $48 $B8 $41 $53 $4D $20
+            $50 $41 $4E $49 \ MOVQ#: RAX 'ASM PANI'
+    $50                     \ PUSHQ# RAX
+
+    $B8 $02000004           \ MOVL#: RAX 0x02000004 ( SYS_WRITE )
+    $BF $00000002           \ MOVL#: RDI 0x00000002 ( stderr )
+    $48 $8B $F4             \ MOVQ< RSI, RSP
+    $BA $0000000B           \ MOVL#: RDX 0x00000004 ( length )
+    $0F $05                 \ SYSCALL
+    $58                     \ POPQ# RAX
+
+    $B8 $02000001           \ MOVL#: RAX 0x02000001 ( SYS_EXIT )
+    $BF $00000004           \ MOVL#: RDI 0x00000004
+    $0F $05                 \ SYSCALL
     ;
 
 : NO-REX/VEX ( -- R8:0 ) CALL>
