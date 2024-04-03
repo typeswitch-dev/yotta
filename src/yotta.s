@@ -39,7 +39,7 @@ struc USER
 .MINW resq 1 ; minimal word list
 .ASMW resq 1 ; assembler word list
 .FORW resq 1 ; forth word list
-.MIRW resq 1 ; mirth word list
+.PRGW resq 1 ; program word list
 .DICT resq 1 ; dictionary for new definitions
 .WORD resq 1 ; word primitive
 .FIND resq 1 ; find primitive
@@ -68,7 +68,7 @@ _main:  ; align stack
         mov [rcx], rdi
         mov [rbp + USER.DICT], rcx
         mov [rbp + USER.SORD], rcx
-        lea rcx, [rbp + USER.MIRW]
+        lea rcx, [rbp + USER.PRGW]
         mov [rbp + USER.SORD + 8], rcx
         lea rcx, [rbp + USER.FORW]
         mov [rbp + USER.SORD + 16], rcx
@@ -357,4 +357,3 @@ KERNEL: incbin "src/0-preamble.fs"
 section .bss
 
 DATA: resb 0x10000000
-

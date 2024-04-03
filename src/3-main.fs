@@ -1,4 +1,4 @@
-[KERNEL-DEFINITIONS]
+[PROGRAM-DEFINITIONS]
 
 : MAIN CALL>
     \ 'H' EMIT 'e' EMIT 'l' EMIT 'l' EMIT 'o' EMIT '!' EMIT CR
@@ -19,4 +19,3 @@
     ;
 
 [ MAIN BYE ]
-

@@ -46,7 +46,7 @@
 : $USER.MINW ^00000048 ; \ Minimal wordlist. (What you get when you use ONLY.)
 : $USER.ASMW ^00000050 ; \ Assembler wordlist.
 : $USER.FORW ^00000058 ; \ Forth wordlist.
-: $USER.MIRW ^00000060 ; \ Mirth wordlist.
+: $USER.PRGW ^00000060 ; \ Program wordlist.
 : $USER.DICT ^00000068 ; \ Dictionary pointer.
 : $USER.WORD ^00000070 ; \ "WORD" primitive
 : $USER.FIND ^00000078 ; \ "FIND" primitive
@@ -97,13 +97,13 @@
     \ Change current dictionary to KERNEL.
     $B8 $USER.KERW SET-CURRENT ;
 
-: [MIRTH-DEFINITIONS] ( -- )
-    \ Change current dictionary to MIRTH.
-    $B8 $USER.MIRW SET-CURRENT ;
-
 : [FORTH-DEFINITIONS] ( -- )
     \ Change current dictionary to FORTH.
     $B8 $USER.FORW SET-CURRENT ;
+
+: [PROGRAM-DEFINITIONS] ( -- )
+    \ Change current dictionary to PROGRAM.
+    $B8 $USER.PRGW SET-CURRENT ;
 
 : [ASSEMBLER-DEFINITIONS] ( -- )
     \ Change current dictionary to ASSEMBLER.
