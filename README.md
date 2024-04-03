@@ -16,4 +16,4 @@ The rest is built-up from there. Yotta is split into several parts, in the `src`
 
 If this piques your interest, I recommend reading the [preamble](https://github.com/typeswitch-dev/yotta/blob/main/src/0-preamble.fs) and the [forth chapter](https://github.com/typeswitch-dev/yotta/blob/main/src/2-forth.fs), and the rest as interests you.
 
-This code currently targets x86-64 macs, which are increasingly rare. It should fairly possible to adapt the code to linux (PRs are welcome) by adjusting some magic numbers within `yotta.s` and elsewhere. A more extensive rewrite would be necessary to target Windows or other platforms, perhaps requiring exposing new primitives. And a complete rewrite would be required to target a different CPU architecture.
+This code currently targets x86-64 macs, which are increasingly rare. It should be fairly possible to adapt the code to linux (PRs are welcome) by adjusting some magic numbers within `yotta.s` and elsewhere. A more extensive rewrite would be necessary to target Windows or other platforms, perhaps requiring exposing new primitives. And a complete rewrite would be required to target a different CPU architecture.
