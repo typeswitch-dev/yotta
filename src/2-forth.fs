@@ -82,7 +82,7 @@
     MOVQ< RAX, [R15]. $08
     MOVQ< RDX, [R15]
     MOVQ> RBX, [R15]
-    MOVQ> RBX, [R15]. $08
+    MOVQ> RDX, [R15]. $08
     MOVQ< RBX, RAX ;
 : ROTR ( a b c -- c a b ) INLINE/CALL>
     MOVQ< RDX, [R15]. $08
@@ -575,7 +575,7 @@
     UNTILBE ;
 
 : FIND-NAME-IN ( c-addr u wid -- nt|0 ) CALL>
-    DROP DROP DROP 0 ;
+    DROP DROP DROP 0 ; \ TODO
 
 : EXIT ^C3 ;
 
