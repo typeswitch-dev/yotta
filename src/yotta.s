@@ -1,5 +1,6 @@
 bits 64
 global _main
+global main
 extern _write
 extern _read
 extern _exit
@@ -7,17 +8,31 @@ extern _mmap
 
 section .text
 
-; bindings for amd64-darwin
-SYS_EXIT    equ 0x2000001
-SYS_WRITE   equ 0x2000004
-SYS_MMAP    equ 0x20000C5
-PROT_READ   equ 0x1
-PROT_WRITE  equ 0x2
-PROT_EXEC   equ 0x4
-MAP_ANON    equ 0x1000
-MAP_JIT     equ 0x800
-MAP_PRIVATE equ 0x2
-MAP_FAILED  equ -1
+%ifdef OS_LINUX
+        OS_ID       equ 1
+        SYS_EXIT    equ 60
+        SYS_WRITE   equ 1
+        SYS_MMAP    equ 9
+        PROT_READ   equ 1
+        PROT_WRITE  equ 2
+        PROT_EXEC   equ 4
+        MAP_ANON    equ 32
+        MAP_JIT     equ 0
+        MAP_PRIVATE equ 2
+        MAP_FAILED  equ -1
+%elifdef OS_MACOS
+        OS_ID       equ 2
+        SYS_EXIT    equ 0x2000001
+        SYS_WRITE   equ 0x2000004
+        SYS_MMAP    equ 0x20000C5
+        PROT_READ   equ 0x1
+        PROT_WRITE  equ 0x2
+        PROT_EXEC   equ 0x4
+        MAP_ANON    equ 0x1000
+        MAP_JIT     equ 0x800
+        MAP_PRIVATE equ 0x2
+        MAP_FAILED  equ -1
+%endif
 
 NAME_SIZE equ 32
 SORD_SIZE equ 128
@@ -43,9 +58,12 @@ struc USER
 .DICT resq 1 ; dictionary for new definitions
 .WORD resq 1 ; word primitive
 .FIND resq 1 ; find primitive
+.OSID resq 1 ; operating system id (1 = linux, 2 = macos)
+      resq 1 ; padding to align SORD by 16 bytes
 .SORD resq SORD_SIZE/8 ; search order
 endstruc
 
+main:
 _main:  ; align stack
         and rsp, -16
 
@@ -56,6 +74,8 @@ _main:  ; align stack
         mov rcx, USER_size / 8
         rep stosq
 
+        mov rax, OS_ID
+        mov [rbp + USER.OSID], rax
         lea rax, [rel CARET]
         mov [rbp + USER.EVAL], rax
         lea rax, [rel FIND]

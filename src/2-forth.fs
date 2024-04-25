@@ -140,17 +140,6 @@
     \ Push 64-bit literal on data stack.
     DUP MOVQ#:: RBX ;
 
-[KERNEL-DEFINITIONS]
-
-\ syscall numbers (darwin) as 32-bit immediates
-: $SYS_EXIT  ^02000001 ;
-: $SYS_FORK  ^02000002 ;
-: $SYS_READ  ^02000003 ;
-: $SYS_WRITE ^02000004 ;
-: $SYS_OPEN  ^02000005 ;
-: $SYS_CLOSE ^02000006 ;
-: $SYS_MMAP  ^020000C5 ;
-
 [FORTH-DEFINITIONS]
 
 : BYE ( -- ) CALL>

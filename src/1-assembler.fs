@@ -13,14 +13,14 @@
             $50 $41 $4E $49 \ MOVQ#: RAX 'ASM PANI'
     $50                     \ PUSHQ# RAX
 
-    $B8 $02000004           \ MOVL#: RAX 0x02000004 ( SYS_WRITE )
+    $B8 $SYS_WRITE          \ MOVL#: RAX SYS_WRITE
     $BF $00000002           \ MOVL#: RDI 0x00000002 ( stderr )
     $48 $8B $F4             \ MOVQ< RSI, RSP
     $BA $0000000B           \ MOVL#: RDX 0x00000004 ( length )
     $0F $05                 \ SYSCALL
     $58                     \ POPQ# RAX
 
-    $B8 $02000001           \ MOVL#: RAX 0x02000001 ( SYS_EXIT )
+    $B8 $SYS_EXIT           \ MOVL#: RAX SYS_EXIT
     $BF $00000004           \ MOVL#: RDI 0x00000004
     $0F $05                 \ SYSCALL
     ;

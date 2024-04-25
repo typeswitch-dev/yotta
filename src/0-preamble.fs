@@ -50,7 +50,8 @@
 : $USER.DICT ^00000068 ; \ Dictionary pointer.
 : $USER.WORD ^00000070 ; \ "WORD" primitive
 : $USER.FIND ^00000078 ; \ "FIND" primitive
-: $USER.SORD ^00000080 ;
+: $USER.OSID ^00000080 ; \ operating system id ( 1 = linux, 2 = macos )
+: $USER.SORD ^00000090 ;
 
 \ Dict field offsets. Keep in sync with "struc DICT" in the ASM source.
 \ The dictionary is a linked list of definitions.
@@ -112,3 +113,21 @@
 : [MINIMAL-DEFINITIONS] ( -- )
     \ Change current dictionary to MINIMAL.
     $B8 $USER.MINW SET-CURRENT ;
+
+[KERNEL-DEFINITIONS]
+
+
+: ^USER.OSID CALL>
+    $B8 $USER.OSID $AB ;
+
+: SYSCALL-ID;
+    ^48 ^8B ^85 ^USER.OSID  \ MOV RAX,[RBP+USER.OSID]
+    ^48 ^8D ^0D ^00000001   \ LEA RCX,[RIP+1]
+    ^8B ^04 ^81             \ MOV EAX,[4*RAX+RCX]
+    ^AB                     \ STOSD
+    ^C3 ;                   \ RET
+
+                        \  linux    macos
+: $SYS_EXIT  SYSCALL-ID; $0000003C $02000001
+: $SYS_READ  SYSCALL-ID; $00000000 $02000003
+: $SYS_WRITE SYSCALL-ID; $00000001 $02000004
